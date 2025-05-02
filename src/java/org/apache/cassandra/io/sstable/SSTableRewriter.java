@@ -19,10 +19,14 @@ package org.apache.cassandra.io.sstable;
 
 import java.lang.ref.WeakReference;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cache.InstrumentingCache;
 import org.apache.cassandra.cache.KeyCacheKey;
@@ -53,8 +57,14 @@ import static org.apache.cassandra.utils.Throwables.merge;
  */
 public class SSTableRewriter
 {
+    private static final Logger logger = LoggerFactory.getLogger(SSTableRewriter.class);
+
+    public volatile static Function<ColumnFamilyStore, Boolean> ShouldMigrateKeyCache = cfs -> true;
+    private static ConcurrentHashMap<UUID, Boolean> shouldMigrateKeyCacheCache = new ConcurrentHashMap<>();
+
     private final DataTracker dataTracker;
     private final ColumnFamilyStore cfs;
+    private final boolean shouldMigrateKeyCache;
     private final long preemptiveOpenInterval;
     private final long maxAge;
     private final List<SSTableReader> finished = new ArrayList<>();
@@ -102,6 +112,9 @@ public class SSTableRewriter
         }
         this.dataTracker = cfs.getDataTracker();
         this.cfs = cfs;
+        this.shouldMigrateKeyCache = shouldMigrateKeyCacheCache.computeIfAbsent(
+                cfs.metadata.cfId,
+                id -> ShouldMigrateKeyCache.apply(cfs));
         this.maxAge = maxAge;
         this.isOffline = isOffline;
         this.preemptiveOpenInterval = preemptiveOpenInterval;
@@ -131,7 +144,7 @@ public class SSTableRewriter
             {
                 cfs.invalidateCachedRow(row.key);
             }
-            else
+            else if (shouldMigrateKeyCache)
             {
                 boolean save = false;
                 for (SSTableReader reader : rewriting)
@@ -170,10 +183,13 @@ public class SSTableRewriter
         {
             if (isOffline)
             {
-                for (SSTableReader reader : rewriting)
+                if (Boolean.getBoolean("cassandra.io.skip-cache"))
                 {
-                    RowIndexEntry index = reader.getPosition(key, SSTableReader.Operator.GE);
-                    CLibrary.trySkipCache(fileDescriptors.get(reader.descriptor), 0, index == null ? 0 : index.position);
+                    for (SSTableReader reader : rewriting)
+                    {
+                        RowIndexEntry index = reader.getPosition(key, SSTableReader.Operator.GE);
+                        CLibrary.trySkipCache(fileDescriptors.get(reader.descriptor), 0, index == null ? 0 : index.position);
+                    }
                 }
             }
             else
@@ -190,7 +206,11 @@ public class SSTableRewriter
         }
     }
 
-    public void abort()
+    public void abort() {
+        abort("SSTableRewriter (unknown)");
+    }
+
+    public void abort(String reason)
     {
         switch (state)
         {
@@ -233,7 +253,7 @@ public class SSTableRewriter
         {
             try
             {
-                finished.writer.abort();
+                finished.writer.abort(reason);
             }
             catch (Throwable t)
             {
@@ -395,6 +415,7 @@ public class SSTableRewriter
             if (preemptiveOpenInterval == Long.MAX_VALUE)
             {
                 SSTableReader reader = writer.finish(SSTableWriter.FinishType.NORMAL, maxAge, -1);
+                logger.info("Adding finished reader (normal open) {}", reader);
                 finishedReaders.add(reader);
             }
             else
@@ -403,12 +424,13 @@ public class SSTableRewriter
                 SSTableReader reader = writer.finish(SSTableWriter.FinishType.EARLY, maxAge, -1);
                 replaceEarlyOpenedFile(currentlyOpenedEarly, reader);
                 moveStarts(reader, reader.last, false);
+                logger.info("Adding finished reader (early open) {}", reader);
                 finishedEarly.add(new Finished(writer, reader));
             }
         }
         else
         {
-            writer.abort();
+            writer.abort("SSTableRewriter switch writer (empty file)");
         }
         currentlyOpenedEarly = null;
         currentlyOpenedEarlyAt = 0;
@@ -487,7 +509,7 @@ public class SSTableRewriter
             }
             else
             {
-                f.writer.abort();
+                f.writer.abort("SSTableRewriter finish (empty file)");
                 assert f.reader == null;
             }
             finishedEarly.poll();

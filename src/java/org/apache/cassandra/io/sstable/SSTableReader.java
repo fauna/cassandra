@@ -230,6 +230,21 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
 
     private RestorableMeter readMeter;
 
+    @Override
+    public String toString()
+    {
+        return getClass().getSimpleName() + '(' + infoString() + ')';
+    }
+
+    public String infoString()
+    {
+        return "'" + (new File(getFilename())).getName() + "'," +
+               openReason + ',' +
+               "level=" + getSSTableLevel() + ',' +
+               "first=" + first + ',' +
+               "last=" + last;
+    }
+
     /**
      * Calculate approximate key count.
      * If cardinality estimator is available on all given sstables, then this method use them to estimate
@@ -1074,6 +1089,9 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
         replacement.first = newFirst;
         replacement.last = last;
         replacement.isSuspect.set(isSuspect.get());
+
+        logger.info("Replacing opened {} with {}", this, replacement);
+
         setReplacedBy(replacement);
         return replacement;
     }
@@ -1605,7 +1623,7 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
         }
 
         // next, the key cache (only make sense for valid row key)
-        if ((op == Operator.EQ || op == Operator.GE) && (key instanceof DecoratedKey))
+        if ((op == Operator.EQ || op == Operator.GE) && (key.kind() == DecoratedKey.Kind.ROW_KEY))
         {
             DecoratedKey decoratedKey = (DecoratedKey)key;
             KeyCacheKey cacheKey = new KeyCacheKey(metadata.ksAndCFName, descriptor, decoratedKey.getKey());
@@ -2309,10 +2327,13 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
             switch (desc.type)
             {
                 case FINAL:
-                    if (isCompacted)
+                    if (isCompacted) {
+                        logger.info("Deleting FINAL sstable {}", desc);
                         new SSTableDeletingTask(desc, components, totalDiskSpaceUsed, sizeOnDelete).run();
+                    }
                     break;
                 case TEMPLINK:
+                    logger.info("Deleting TEMPLINK sstable {}", desc);
                     new SSTableDeletingTask(desc, components, null, 0).run();
                     break;
                 default:

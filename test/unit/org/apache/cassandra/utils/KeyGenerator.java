@@ -105,7 +105,7 @@ public class KeyGenerator {
 
         static {
             try {
-                BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream("/usr/share/dict/words")));
+                BufferedReader br = new BufferedReader(new InputStreamReader(KeyGenerator.class.getClassLoader().getResourceAsStream("words")));
                 while (br.ready()) {
                     br.readLine();
                     WORDS++;
@@ -131,11 +131,7 @@ public class KeyGenerator {
         }
 
         public void reset() {
-            try {
-                reader = new BufferedReader(new InputStreamReader(new FileInputStream("/usr/share/dict/words")));
-            } catch (FileNotFoundException e) {
-                throw new RuntimeException(e);
-            }
+            reader = new BufferedReader(new InputStreamReader(KeyGenerator.class.getClassLoader().getResourceAsStream("words")));
             for (int i = 0; i < skip; i++) {
                 try {
                     reader.readLine();

@@ -53,14 +53,19 @@ public class RowIndexEntry implements IMeasurableMemory
 
     public static RowIndexEntry create(long position, DeletionTime deletionTime, ColumnIndex index)
     {
+        return create(position, deletionTime, index.columnsIndex);
+    }
+
+    public static RowIndexEntry create(long position, DeletionTime deletionTime, List<IndexHelper.IndexInfo> index)
+    {
         assert index != null;
         assert deletionTime != null;
 
         // we only consider the columns summary when determining whether to create an IndexedEntry,
         // since if there are insufficient columns to be worth indexing we're going to seek to
         // the beginning of the row anyway, so we might as well read the tombstone there as well.
-        if (index.columnsIndex.size() > 1)
-            return new IndexedEntry(position, deletionTime, index.columnsIndex);
+        if (index.size() > 1)
+            return new IndexedEntry(position, deletionTime, index);
         else
             return new RowIndexEntry(position);
     }

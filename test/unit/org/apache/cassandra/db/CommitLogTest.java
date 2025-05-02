@@ -31,6 +31,7 @@ import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.commitlog.CommitLog;
@@ -243,9 +244,9 @@ public class CommitLogTest extends SchemaLoader
         testRecovery(out.toByteArray());
     }
 
-    protected File tmpFile() throws IOException
+    protected File tmpFile()
     {
-        File logFile = File.createTempFile("CommitLog-" + CommitLogDescriptor.current_version + "-", ".log");
+        File logFile = FileUtils.createTempFile("CommitLog-" + CommitLogDescriptor.current_version + "-", ".log");
         logFile.deleteOnExit();
         assert logFile.length() == 0;
         return logFile;

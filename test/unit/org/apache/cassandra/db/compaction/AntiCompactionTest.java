@@ -98,7 +98,7 @@ public class AntiCompactionTest extends SchemaLoader
             assertFalse(sstable.isMarkedCompacted());
             assertEquals(1, sstable.selfRef().globalCount());
         }
-        assertEquals(0, store.getDataTracker().getCompacting().size());
+        assertEquals(0, store.getDataTracker().unsafeGetCompacting().size());
         assertEquals(repairedKeys, 4);
         assertEquals(nonRepairedKeys, 6);
     }
@@ -158,7 +158,7 @@ public class AntiCompactionTest extends SchemaLoader
         assertThat(store.getSSTables().size(), is(1));
         assertThat(Iterables.get(store.getSSTables(), 0).isRepaired(), is(false));
         assertThat(Iterables.get(store.getSSTables(), 0).selfRef().globalCount(), is(1));
-        assertThat(store.getDataTracker().getCompacting().size(), is(0));
+        assertThat(store.getDataTracker().unsafeGetCompacting().size(), is(0));
     }
 
     @Test
@@ -175,7 +175,7 @@ public class AntiCompactionTest extends SchemaLoader
         assertThat(store.getSSTables().size(), is(1));
         assertThat(Iterables.get(store.getSSTables(), 0).isRepaired(), is(true));
         assertThat(Iterables.get(store.getSSTables(), 0).selfRef().globalCount(), is(1));
-        assertThat(store.getDataTracker().getCompacting().size(), is(0));
+        assertThat(store.getDataTracker().unsafeGetCompacting().size(), is(0));
     }
 
 

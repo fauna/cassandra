@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
 import org.apache.cassandra.utils.CloseableIterator;
 
-public abstract class AbstractCompactionIterable extends CompactionInfo.Holder implements Iterable<AbstractCompactedRow>
+public abstract class AbstractCompactionIterable<R extends AbstractCompactedRow> extends CompactionInfo.Holder implements Iterable<R>
 {
     protected final OperationType type;
     protected final CompactionController controller;
@@ -75,5 +75,5 @@ public abstract class AbstractCompactionIterable extends CompactionInfo.Holder i
         return counters;
     }
 
-    public abstract CloseableIterator<AbstractCompactedRow> iterator();
+    public abstract CloseableIterator<R> iterator();
 }

@@ -28,9 +28,9 @@ import org.apache.cassandra.io.IVersionedSerializer;
  */
 public class CallbackInfo
 {
-    protected final InetAddress target;
-    protected final IAsyncCallback callback;
-    protected final IVersionedSerializer<?> serializer;
+    public final InetAddress target;
+    public final IAsyncCallback callback;
+    public final IVersionedSerializer<?> serializer;
     private final boolean failureCallback;
 
     public CallbackInfo(InetAddress target, IAsyncCallback callback, IVersionedSerializer<?> serializer)

@@ -54,6 +54,7 @@ import org.apache.cassandra.utils.UUIDGen;
 import org.apache.thrift.TBaseHelper;
 import org.apache.thrift.TException;
 import org.codehaus.jackson.*;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 
@@ -184,7 +185,7 @@ public class CliClient
 
         try
         {
-            final Constructor constructor = new Constructor(CliUserHelp.class);
+            final Constructor constructor = new Constructor(CliUserHelp.class, new LoaderOptions());
             final Yaml yaml = new Yaml(constructor);
             return (CliUserHelp) yaml.load(is);
         }

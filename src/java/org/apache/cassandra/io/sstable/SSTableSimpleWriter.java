@@ -82,7 +82,7 @@ public class SSTableSimpleWriter extends AbstractSSTableSimpleWriter
         }
         catch (FSError e)
         {
-            writer.abort();
+            writer.abort(String.format("SSTableSimpleWriter (%s)", e.getMessage()));
             throw e;
         }
     }

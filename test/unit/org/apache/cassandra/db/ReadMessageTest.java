@@ -33,6 +33,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.filter.NamesQueryFilter;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
+import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -69,7 +70,7 @@ public class ReadMessageTest extends SchemaLoader
 
     private ReadCommand serializeAndDeserializeReadMessage(ReadCommand rm) throws IOException
     {
-        ReadCommandSerializer rms = ReadCommand.serializer;
+        IVersionedSerializer<ReadCommand> rms = ReadCommand.serializer;
         DataOutputBuffer out = new DataOutputBuffer();
         ByteArrayInputStream bis;
 

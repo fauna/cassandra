@@ -214,6 +214,15 @@ public abstract class AbstractCompactionStrategy
     }
 
     /**
+     * If this compaction strategy supports leveling, return the
+     * number of SSTables in L0. If not, return zero.
+     */
+    public int getUnleveledSSTables()
+    {
+        return 0;
+    }
+
+    /**
      * If not affected by MeteredFlusher (and handling flushing on its own), override to tell MF how much
      * space to reserve for this CF, i.e., how much space to subtract from `memtable_total_space_in_mb` when deciding
      * if other memtables should be flushed or not.

@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.metrics.AllocationMetrics;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import sun.nio.ch.DirectBuffer;
@@ -46,6 +47,8 @@ import sun.nio.ch.DirectBuffer;
  */
 public class SlabAllocator extends MemtableBufferAllocator
 {
+    public final AllocationMetrics metrics;
+
     private static final Logger logger = LoggerFactory.getLogger(SlabAllocator.class);
 
     private final static int REGION_SIZE = 1024 * 1024;
@@ -66,6 +69,8 @@ public class SlabAllocator extends MemtableBufferAllocator
     {
         super(onHeap, offHeap);
         this.allocateOnHeapOnly = allocateOnHeapOnly;
+
+        this.metrics = new AllocationMetrics("SlabAllocator");
     }
 
     public ByteBuffer allocate(int size)
@@ -92,14 +97,18 @@ public class SlabAllocator extends MemtableBufferAllocator
             return region.allocate(size);
         }
 
+        long start = System.nanoTime();
+
         while (true)
         {
             Region region = getRegion();
 
             // Try to allocate from this region
             ByteBuffer cloned = region.allocate(size);
-            if (cloned != null)
+            if (cloned != null) {
+                metrics.latency.addNano(System.nanoTime() - start);
                 return cloned;
+            }
 
             // not enough space!
             currentRegion.compareAndSet(region, null);

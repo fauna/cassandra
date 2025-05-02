@@ -217,7 +217,10 @@ public class CompressionMetadata
         // position of the chunk
         int idx = 8 * (int) (position / parameters.chunkLength());
 
-        if (idx >= chunkOffsetsSize)
+        if (idx + 8 > chunkOffsetsSize)
+            throw new CorruptSSTableException(new EOFException(), indexFilePath);
+
+        if (idx + 8 < chunkOffsets.size() && idx + 16 > chunkOffsets.size())
             throw new CorruptSSTableException(new EOFException(), indexFilePath);
 
         long chunkOffset = chunkOffsets.getLong(idx);

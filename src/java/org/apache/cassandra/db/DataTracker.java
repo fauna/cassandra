@@ -78,17 +78,22 @@ public class DataTracker
         throw new AssertionError(view.get().liveMemtables.toString());
     }
 
-    public Set<SSTableReader> getSSTables()
+    // Return the set of SSTables managed by this DataTracker without
+    // incrementing ref counts. This method is unsafe and should probably
+    // only be used in a compaction task.
+    public Set<SSTableReader> unsafeGetSSTables()
     {
         return view.get().sstables;
     }
 
-    public Set<SSTableReader> getUncompactingSSTables()
+    // Dangerous. See unsafeGetSSTables.
+    public Set<SSTableReader> unsafeGetUncompactingSSTables()
     {
         return view.get().nonCompactingSStables();
     }
 
-    public Iterable<SSTableReader> getUncompactingSSTables(Iterable<SSTableReader> candidates)
+    // Dangerous. See unsafeGetSSTables.
+    public Iterable<SSTableReader> unsafeGetUncompactingSSTables(Iterable<SSTableReader> candidates)
     {
         final View v = view.get();
         return Iterables.filter(candidates, new Predicate<SSTableReader>()
@@ -478,7 +483,7 @@ public class DataTracker
     public long estimatedKeys()
     {
         long n = 0;
-        for (SSTableReader sstable : getSSTables())
+        for (SSTableReader sstable : unsafeGetSSTables())
             n += sstable.estimatedKeys();
         return n;
     }
@@ -487,7 +492,7 @@ public class DataTracker
     {
         long sum = 0;
         long count = 0;
-        for (SSTableReader sstable : getSSTables())
+        for (SSTableReader sstable : unsafeGetSSTables())
         {
             long n = sstable.getEstimatedColumnCount().count();
             sum += sstable.getEstimatedColumnCount().mean() * n;
@@ -502,7 +507,7 @@ public class DataTracker
         long allColumns = 0;
         int localTime = (int)(System.currentTimeMillis()/1000);
 
-        for (SSTableReader sstable : getSSTables())
+        for (SSTableReader sstable : unsafeGetSSTables())
         {
             allDroppable += sstable.getDroppableTombstonesBefore(localTime - sstable.metadata.getGcGraceSeconds());
             allColumns += sstable.getEstimatedColumnCount().mean() * sstable.getEstimatedColumnCount().count();
@@ -578,7 +583,8 @@ public class DataTracker
         return new SSTableIntervalTree(intervals);
     }
 
-    public Set<SSTableReader> getCompacting()
+    // Dangerous. See unsafeGetSSTables.
+    public Set<SSTableReader> unsafeGetCompacting()
     {
         return getView().compacting;
     }

@@ -25,6 +25,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
@@ -38,7 +39,6 @@ import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.btree.BTree;
 import org.apache.cassandra.utils.btree.UpdateFunction;
-import org.apache.cassandra.utils.concurrent.Locks;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.memory.HeapAllocator;
 import org.apache.cassandra.utils.memory.MemtableAllocator;
@@ -55,7 +55,7 @@ import static org.apache.cassandra.db.index.SecondaryIndexManager.Updater;
  * <p/>
  * WARNING: removing element through getSortedColumns().iterator() is *not* supported
  */
-public class AtomicBTreeColumns extends ColumnFamily
+public final class AtomicBTreeColumns extends ColumnFamily
 {
     static final long EMPTY_SIZE = ObjectSizes.measure(new AtomicBTreeColumns(CFMetaData.IndexCf, null))
             + ObjectSizes.measure(new Holder(null, null));
@@ -112,6 +112,8 @@ public class AtomicBTreeColumns extends ColumnFamily
 
     private static final AtomicReferenceFieldUpdater<AtomicBTreeColumns, Holder> refUpdater = AtomicReferenceFieldUpdater.newUpdater(AtomicBTreeColumns.class, Holder.class, "ref");
 
+    private final ReentrantLock lock = new ReentrantLock();
+    
     private AtomicBTreeColumns(CFMetaData metadata)
     {
         this(metadata, EMPTY);
@@ -199,7 +201,7 @@ public class AtomicBTreeColumns extends ColumnFamily
         {
             if (usePessimisticLocking())
             {
-                Locks.monitorEnterUnsafe(this);
+                lock.lock();
                 monitorOwned = true;
             }
             while (true)
@@ -239,7 +241,7 @@ public class AtomicBTreeColumns extends ColumnFamily
                     }
                     if (shouldLock)
                     {
-                        Locks.monitorEnterUnsafe(this);
+                        lock.lock();
                         monitorOwned = true;
                     }
                 }
@@ -248,7 +250,7 @@ public class AtomicBTreeColumns extends ColumnFamily
         finally
         {
             if (monitorOwned)
-                Locks.monitorExitUnsafe(this);
+                lock.unlock();
         }
     }
 

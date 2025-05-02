@@ -159,7 +159,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                             cacheType);
                 es.shutdown();
             }
-        }, MoreExecutors.sameThreadExecutor());
+        }, MoreExecutors.newDirectExecutorService());
 
         return cacheLoad;
     }

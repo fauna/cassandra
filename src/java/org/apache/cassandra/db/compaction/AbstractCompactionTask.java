@@ -44,7 +44,7 @@ public abstract class AbstractCompactionTask extends DiskAwareRunnable
         this.compactionType = OperationType.COMPACTION;
 
         // enforce contract that caller should mark sstables compacting
-        Set<SSTableReader> compacting = cfs.getDataTracker().getCompacting();
+        Set<SSTableReader> compacting = cfs.getDataTracker().unsafeGetCompacting();
         for (SSTableReader sstable : sstables)
             assert compacting.contains(sstable) : sstable.getFilename() + " is not correctly marked compacting";
     }

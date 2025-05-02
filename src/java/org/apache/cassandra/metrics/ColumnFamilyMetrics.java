@@ -361,7 +361,7 @@ public class ColumnFamilyMetrics
         {
             public Integer value()
             {
-                return cfs.getDataTracker().getSSTables().size();
+                return cfs.getDataTracker().unsafeGetSSTables().size();
             }
         });
         liveDiskSpaceUsed = createColumnFamilyCounter("LiveDiskSpaceUsed");

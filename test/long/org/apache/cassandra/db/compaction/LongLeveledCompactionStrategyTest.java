@@ -215,7 +215,7 @@ public class LongLeveledCompactionStrategyTest extends SchemaLoader
         }
 
         //check that compacting status was clearedd in all sstables
-        assertEquals(0, store.getDataTracker().getCompacting().size());
+        assertEquals(0, store.getDataTracker().unsafeGetCompacting().size());
 
         //make sure readers were replaced correctly on unrepaired leveled manifest after anti-compaction
         LeveledCompactionStrategy lcs = (LeveledCompactionStrategy) strategy.getWrappedStrategies().get(1);

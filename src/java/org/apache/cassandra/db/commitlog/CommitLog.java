@@ -119,14 +119,14 @@ public class CommitLog implements CommitLogMBean
         int replayed = 0;
         if (files.length == 0)
         {
-            logger.info("No commitlog files found; skipping replay");
+            logger.debug("No commitlog files found; skipping replay");
         }
         else
         {
             Arrays.sort(files, new CommitLogSegmentFileComparator());
-            logger.info("Replaying {}", StringUtils.join(files, ", "));
+            logger.debug("Replaying {}", StringUtils.join(files, ", "));
             replayed = recover(files);
-            logger.info("Log replay complete, {} replayed mutations", replayed);
+            logger.debug("Log replay complete, {} replayed mutations", replayed);
 
             for (File f : files)
                 CommitLog.instance.allocator.recycleSegment(f);

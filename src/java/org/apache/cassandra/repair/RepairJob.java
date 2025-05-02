@@ -141,9 +141,8 @@ public class RepairJob
 
                 public void onFailure(Throwable throwable)
                 {
-                    // TODO need to propagate error to RepairSession
                     logger.error("Error occurred during snapshot phase", throwable);
-                    listener.failedSnapshot();
+                    listener.failedSnapshot(throwable);
                     failed = true;
                 }
             }, taskExecutor);

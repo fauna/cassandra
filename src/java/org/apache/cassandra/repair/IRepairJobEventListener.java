@@ -27,5 +27,5 @@ public interface IRepairJobEventListener
      * Signal that there was a failure during the snapshot creation process.
      *
      */
-    public void failedSnapshot();
+    public void failedSnapshot(Throwable cause);
 }

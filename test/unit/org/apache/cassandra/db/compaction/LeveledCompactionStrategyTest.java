@@ -52,6 +52,11 @@ import static org.junit.Assert.assertTrue;
 @RunWith(OrderedJUnit4ClassRunner.class)
 public class LeveledCompactionStrategyTest extends SchemaLoader
 {
+    static
+    {
+        System.setProperty("fauna.allow-splash", "true");
+    }
+
     private String ksname = "Keyspace1";
     private String cfname = "StandardLeveled";
     private Keyspace keyspace = Keyspace.open(ksname);

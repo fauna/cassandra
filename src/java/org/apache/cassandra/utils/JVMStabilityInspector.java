@@ -116,8 +116,9 @@ public final class JVMStabilityInspector
                 t.printStackTrace(System.err);
                 logger.error("JVM state determined to be unstable.  Exiting forcefully due to:", t);
             }
-            StorageService.instance.removeShutdownHook();
-            System.exit(100);
+
+            // call Runtime.halt() in order to skip shutdown hooks
+            Runtime.getRuntime().halt(100);
         }
     }
 }

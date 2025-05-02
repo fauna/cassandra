@@ -138,7 +138,7 @@ public class CompactionTask extends AbstractCompactionTask
         // new sstables from flush can be added during a compaction, but only the compaction can remove them,
         // so in our single-threaded compaction world this is a valid way of determining if we're compacting
         // all the sstables (that existed when we started)
-        logger.info("Compacting {}", sstables);
+        logger.info("Task {}: Compacting {}", taskId == null ? "system" : taskId.toString(), sstables);
 
         long start = System.nanoTime();
 
@@ -215,9 +215,10 @@ public class CompactionTask extends AbstractCompactionTask
                 }
                 catch (Throwable t)
                 {
+                    logger.info("Task {}: Error occurred while compacting {}: {}", taskId == null ? "system" : taskId.toString(), sstables, t);
                     try
                     {
-                        writer.abort();
+                        writer.abort(String.format("Compaction Task (%s)", t.getMessage()));
                     }
                     catch (Throwable t2)
                     {
@@ -249,9 +250,9 @@ public class CompactionTask extends AbstractCompactionTask
             long endsize = SSTableReader.getTotalBytes(newSStables);
             double ratio = (double) endsize / (double) startsize;
 
-            StringBuilder newSSTableNames = new StringBuilder();
+            StringBuilder newSSTableInfo = new StringBuilder();
             for (SSTableReader reader : newSStables)
-                newSSTableNames.append(reader.descriptor.baseFilename()).append(",");
+                newSSTableInfo.append(reader.infoString()).append("; ");
 
             double mbps = dTime > 0 ? (double) endsize / (1024 * 1024) / ((double) dTime / 1000) : 0;
             long totalSourceRows = 0;
@@ -271,8 +272,8 @@ public class CompactionTask extends AbstractCompactionTask
             }
 
             SystemKeyspace.updateCompactionHistory(cfs.keyspace.getName(), cfs.name, System.currentTimeMillis(), startsize, endsize, mergedRows);
-            logger.info(String.format("Compacted %d sstables to [%s].  %,d bytes to %,d (~%d%% of original) in %,dms = %fMB/s.  %,d total partitions merged to %,d.  Partition merge counts were {%s}",
-                                      oldSStables.size(), newSSTableNames.toString(), startsize, endsize, (int) (ratio * 100), dTime, mbps, totalSourceRows, totalKeysWritten, mergeSummary.toString()));
+            logger.info(String.format("Task %s: Compacted %d sstables to [%s].  %,d bytes to %,d (~%d%% of original) in %,dms = %fMB/s.  %,d total partitions merged to %,d.  Partition merge counts were {%s}",
+                                      taskId == null ? "system" : taskId.toString(), oldSStables.size(), newSSTableInfo.toString(), startsize, endsize, (int) (ratio * 100), dTime, mbps, totalSourceRows, totalKeysWritten, mergeSummary.toString()));
             logger.debug(String.format("CF Total Bytes Compacted: %,d", CompactionTask.addToTotalBytesCompacted(endsize)));
             logger.debug("Actual #keys: {}, Estimated #keys:{}, Err%: {}", totalKeysWritten, estimatedTotalKeys, ((double)(totalKeysWritten - estimatedTotalKeys)/totalKeysWritten));
         }

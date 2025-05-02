@@ -54,13 +54,13 @@ public class RandomAccessReader extends RandomAccessFile implements FileDataInpu
     // if so, it acts as an imposed limit on reads, rather than a convenience property
     private final long fileLength;
 
-    protected final PoolingSegmentedFile owner;
+    protected final SegmentedFile owner;
 
-    protected RandomAccessReader(File file, int bufferSize, PoolingSegmentedFile owner) throws FileNotFoundException
+    protected RandomAccessReader(File file, int bufferSize, SegmentedFile owner) throws FileNotFoundException
     {
         this(file, bufferSize, -1, owner);
     }
-    protected RandomAccessReader(File file, int bufferSize, long overrideLength, PoolingSegmentedFile owner) throws FileNotFoundException
+    protected RandomAccessReader(File file, int bufferSize, long overrideLength, SegmentedFile owner) throws FileNotFoundException
     {
         super(file, "r");
 
@@ -93,7 +93,7 @@ public class RandomAccessReader extends RandomAccessFile implements FileDataInpu
         validBufferBytes = -1; // that will trigger reBuffer() on demand by read/seek operations
     }
 
-    public static RandomAccessReader open(File file, long overrideSize, PoolingSegmentedFile owner)
+    public static RandomAccessReader open(File file, long overrideSize, SegmentedFile owner)
     {
         return open(file, BUFFER_SIZE, overrideSize, owner);
     }
@@ -109,12 +109,12 @@ public class RandomAccessReader extends RandomAccessFile implements FileDataInpu
     }
 
     @VisibleForTesting
-    static RandomAccessReader open(File file, int bufferSize, PoolingSegmentedFile owner)
+    static RandomAccessReader open(File file, int bufferSize, SegmentedFile owner)
     {
         return open(file, bufferSize, -1L, owner);
     }
 
-    private static RandomAccessReader open(File file, int bufferSize, long overrideSize, PoolingSegmentedFile owner)
+    private static RandomAccessReader open(File file, int bufferSize, long overrideSize, SegmentedFile owner)
     {
         try
         {
@@ -247,19 +247,7 @@ public class RandomAccessReader extends RandomAccessFile implements FileDataInpu
     @Override
     public void close()
     {
-        if (owner == null || buffer == null)
-        {
-            // The buffer == null check is so that if the pool owner has deallocated us, calling close()
-            // will re-call deallocate rather than recycling a deallocated object.
-            // I'd be more comfortable if deallocate didn't have to handle being idempotent like that,
-            // but RandomAccessFile.close will call AbstractInterruptibleChannel.close which will
-            // re-call RAF.close -- in this case, [C]RAR.close since we are overriding that.
-            deallocate();
-        }
-        else
-        {
-            owner.recycle(this);
-        }
+        deallocate();
     }
 
     public void deallocate()

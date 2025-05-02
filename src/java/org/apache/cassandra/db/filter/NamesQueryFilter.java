@@ -19,6 +19,7 @@ package org.apache.cassandra.db.filter;
 
 import java.io.DataInput;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.SortedSet;
@@ -271,7 +272,7 @@ public class NamesQueryFilter implements IDiskAtomFilter
     public Iterator<RangeTombstone> getRangeTombstoneIterator(final ColumnFamily source)
     {
         if (!source.deletionInfo().hasRanges())
-            return Iterators.<RangeTombstone>emptyIterator();
+            return Collections.<RangeTombstone>emptyIterator();
 
         return new AbstractIterator<RangeTombstone>()
         {

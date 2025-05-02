@@ -45,6 +45,8 @@ public class ResponseVerbHandler implements IVerbHandler
         IAsyncCallback cb = callbackInfo.callback;
         if (message.isFailureResponse())
         {
+            logger.error("Failure response from {} (latency {}ms)", message.from, latency);
+
             ((IAsyncCallbackWithFailure) cb).onFailure(message.from);
         }
         else

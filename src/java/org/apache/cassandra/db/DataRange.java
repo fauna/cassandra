@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-import com.google.common.base.Objects;
+import com.google.common.base.MoreObjects;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.composites.Composite;
@@ -109,7 +109,7 @@ public class DataRange
         return keyRange instanceof Range && ((Range)keyRange).isWrapAround();
     }
 
-    public boolean contains(RowPosition pos)
+    public boolean contains(DecoratedKey pos)
     {
         return keyRange.contains(pos);
     }
@@ -199,7 +199,7 @@ public class DataRange
 
         private boolean equals(RowPosition pos, ByteBuffer rowKey)
         {
-            return pos instanceof DecoratedKey && ((DecoratedKey)pos).getKey().equals(rowKey);
+            return pos.kind() == DecoratedKey.Kind.ROW_KEY && ((DecoratedKey)pos).getKey().equals(rowKey);
         }
 
         @Override
@@ -301,7 +301,7 @@ public class DataRange
         @Override
         public String toString()
         {
-            return Objects.toStringHelper(this)
+            return MoreObjects.toStringHelper(this)
                           .add("keyRange", keyRange)
                           .add("sliceFilter", sliceFilter)
                           .add("columnFilter", columnFilter)

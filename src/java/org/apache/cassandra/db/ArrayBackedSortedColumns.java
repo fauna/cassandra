@@ -50,6 +50,8 @@ public class ArrayBackedSortedColumns extends ColumnFamily
     private int sortedSize;
     private volatile boolean isSorted;
 
+    private static final boolean PARALLEL_SORT = Boolean.getBoolean("cassandra.absc.parallel-sort");
+
     public static final ColumnFamily.Factory<ArrayBackedSortedColumns> factory = new Factory<ArrayBackedSortedColumns>()
     {
         public ArrayBackedSortedColumns create(CFMetaData metadata, boolean insertReversed, int initialCapacity)
@@ -206,7 +208,11 @@ public class ArrayBackedSortedColumns extends ColumnFamily
                                     : getComparator().columnComparator(false);
 
         // Sort the unsorted segment - will still potentially contain duplicate (non-reconciled) cells
-        Arrays.sort(cells, sortedSize, size, comparator);
+        if (PARALLEL_SORT) {
+            Arrays.parallelSort(cells, sortedSize, size, comparator);
+        } else {
+            Arrays.sort(cells, sortedSize, size, comparator);
+        }
 
         // Determine the merge start position for that segment
         int pos = binarySearch(0, sortedSize, cells[sortedSize].name(), internalComparator());

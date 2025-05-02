@@ -193,7 +193,8 @@ public final class CFMetaData
                                                      + "preferred_ip inet,"
                                                      + "data_center text,"
                                                      + "rack text"
-                                                     + ") WITH COMMENT='known peers in the cluster'");
+                                                     + ") WITH COMMENT='known peers in the cluster' "
+                                                     + "AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 128, 'max_threshold' : 256}");
 
     public static final CFMetaData PeerEventsCf = compile("CREATE TABLE " + SystemKeyspace.PEER_EVENTS_CF + " ("
                                                           + "peer inet PRIMARY KEY,"
@@ -219,7 +220,8 @@ public final class CFMetaData
                                                      + "rpc_address inet,"
                                                      + "broadcast_address inet,"
                                                      + "listen_address inet"
-                                                     + ") WITH COMMENT='information about the local node'");
+                                                     + ") WITH COMMENT='information about the local node' "
+                                                     + "AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 128, 'max_threshold' : 256}");
 
     public static final CFMetaData TraceSessionsCf = compile("CREATE TABLE " + Tracing.SESSIONS_CF + " ("
                                                              + "session_id uuid PRIMARY KEY,"
@@ -248,7 +250,8 @@ public final class CFMetaData
                                                         + "data blob,"
                                                         + "version int,"
                                                         + ") WITH COMMENT='uncommited batches' AND gc_grace_seconds=0 "
-                                                        + "AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 2}");
+                                                        + "AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 2} "
+                                                        + "AND caching={'keys': 'none'}");
 
     public static final CFMetaData RangeXfersCf = compile("CREATE TABLE " + SystemKeyspace.RANGE_XFERS_CF + " ("
                                                           + "token_bytes blob PRIMARY KEY,"
@@ -260,7 +263,9 @@ public final class CFMetaData
                                                              + "keyspace_name text,"
                                                              + "columnfamily_name text,"
                                                              + "inputs set<int>"
-                                                             + ") WITH COMMENT='unfinished compactions'");
+                                                             + ") WITH COMMENT='unfinished compactions' "
+                                                             + "AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 128, 'max_threshold' : 256} "
+                                                             + "AND caching={'keys': 'none' }");
 
     public static final CFMetaData PaxosCf = compile("CREATE TABLE " + SystemKeyspace.PAXOS_CF + " ("
                                                      + "row_key blob,"
@@ -281,7 +286,9 @@ public final class CFMetaData
                                                                + "rate_15m double,"
                                                                + "rate_120m double,"
                                                                + "PRIMARY KEY ((keyspace_name, columnfamily_name, generation))"
-                                                               + ") WITH COMMENT='historic sstable read rates'");
+                                                               + ") WITH COMMENT='historic sstable read rates' "
+                                                               + "AND caching={'keys': 'none'} "
+                                                               + "AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 128, 'max_threshold' : 256}");
 
     public static final CFMetaData CompactionHistoryCf = compile("CREATE TABLE " + SystemKeyspace.COMPACTION_HISTORY_CF + " ("
                                                                  + "id uuid,"
@@ -292,7 +299,10 @@ public final class CFMetaData
                                                                  + "bytes_out bigint,"
                                                                  + "rows_merged map<int, bigint>,"
                                                                  + "PRIMARY KEY (id)"
-                                                                 + ") WITH COMMENT='show all compaction history' AND DEFAULT_TIME_TO_LIVE=604800");
+                                                                 + ") WITH COMMENT='show all compaction history' "
+                                                                 + "AND DEFAULT_TIME_TO_LIVE=604800 "
+                                                                 + "AND caching={'keys': 'none'} "
+                                                                 + "AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 128, 'max_threshold' : 256}");
 
     public static final CFMetaData SizeEstimatesCf = compile("CREATE TABLE " + SystemKeyspace.SIZE_ESTIMATES_CF + " ("
                                                              + "keyspace_name text,"
@@ -303,8 +313,9 @@ public final class CFMetaData
                                                              + "partitions_count bigint,"
                                                              + "PRIMARY KEY ((keyspace_name), table_name, range_start, range_end)"
                                                              + ") WITH COMMENT='per-table primary range size estimates' "
-                                                             + "AND gc_grace_seconds=0");
-
+                                                             + "AND gc_grace_seconds=0 "
+                                                             + "AND caching={'keys': 'none'} "
+                                                             + "AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 128, 'max_threshold' : 256}");
 
     public static class SpeculativeRetry
     {

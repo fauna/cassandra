@@ -79,7 +79,7 @@ public abstract class DecoratedKey implements RowPosition
             return 0;
 
         // delegate to Token.KeyBound if needed
-        if (!(pos instanceof DecoratedKey))
+        if (pos.kind() != Kind.ROW_KEY)
             return -pos.compareTo(this);
 
         DecoratedKey otherKey = (DecoratedKey) pos;
@@ -90,7 +90,7 @@ public abstract class DecoratedKey implements RowPosition
     public static int compareTo(IPartitioner partitioner, ByteBuffer key, RowPosition position)
     {
         // delegate to Token.KeyBound if needed
-        if (!(position instanceof DecoratedKey))
+      if (position.kind() != Kind.ROW_KEY)
             return -position.compareTo(partitioner.decorateKey(key));
 
         DecoratedKey otherKey = (DecoratedKey) position;

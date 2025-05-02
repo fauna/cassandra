@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
 import javax.management.*;
 import javax.management.openmbean.*;
 
+import com.github.cliftonlabs.json_simple.*;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.*;
 import com.google.common.base.Throwables;
@@ -36,7 +37,6 @@ import com.google.common.collect.*;
 import com.google.common.util.concurrent.*;
 
 import org.apache.cassandra.io.FSWriteError;
-import org.json.simple.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -571,6 +571,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
             if (desc.type.isTemporary)
             {
+                logger.info("Going to delete temporary sstable {}", desc);
                 SSTable.delete(desc, components);
                 continue;
             }
@@ -641,13 +642,13 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             HashSet<Integer> missingGenerations = new HashSet<>(unfinishedGenerations);
             missingGenerations.removeAll(allGenerations);
-            logger.debug("Unfinished compactions of {}.{} reference missing sstables of generations {}",
+            logger.info("Unfinished compactions of {}.{} reference missing sstables of generations {}",
                          metadata.ksName, metadata.cfName, missingGenerations);
         }
 
         // remove new sstables from compactions that didn't complete, and compute
         // set of ancestors that shouldn't exist anymore
-        Set<Integer> completedAncestors = new HashSet<>();
+        Map<Integer, List<Descriptor>> descendantsByCompletedAncestors = new HashMap<>();
         for (Map.Entry<Descriptor, Set<Component>> sstableFiles : directories.sstableLister().skipTemporary(true).list().entrySet())
         {
             // we rename the Data component last - if it does not exist as a final file, we should ignore this sstable and
@@ -679,28 +680,36 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 // any of the ancestors would work, so we'll just lookup the compaction task ID with the first one
                 UUID compactionTaskID = unfinishedCompactions.get(ancestors.iterator().next());
                 assert compactionTaskID != null;
-                logger.debug("Going to delete unfinished compaction product {}", desc);
+                logger.info("Going to delete unfinished compaction product {}", desc);
                 SSTable.delete(desc, sstableFiles.getValue());
                 SystemKeyspace.finishCompaction(compactionTaskID);
             }
             else
             {
-                completedAncestors.addAll(ancestors);
+                for (int ancestor : ancestors)
+                {
+                    List<Descriptor> descendants = descendantsByCompletedAncestors.get(ancestor);
+                    if (descendants == null)
+                    {
+                           descendants = new LinkedList<>();
+                           descendantsByCompletedAncestors.put(ancestor, descendants);
+                    }
+                    descendants.add(desc);
+                }
             }
         }
 
-        // remove old sstables from compactions that did complete
+        // Log sstables that would have been considered left overs and deleted as of C* 2.1.16
         for (Map.Entry<Descriptor, Set<Component>> sstableFiles : directories.sstableLister().list().entrySet())
         {
             Descriptor desc = sstableFiles.getKey();
-            if (completedAncestors.contains(desc.generation))
+            List<Descriptor> descendants = descendantsByCompletedAncestors.get(desc.generation);
+            if (descendants != null)
             {
-                // if any of the ancestors were participating in a compaction, finish that compaction
-                logger.debug("Going to delete leftover compaction ancestor {}", desc);
-                SSTable.delete(desc, sstableFiles.getValue());
-                UUID compactionTaskID = unfinishedCompactions.get(desc.generation);
-                if (compactionTaskID != null)
-                    SystemKeyspace.finishCompaction(unfinishedCompactions.get(desc.generation));
+                // NB. There is no guarantee at this point that ALL the SSTable's descendants were finalized before a crash/restart.
+                // The list descendants list collected might be incomplete and letting C* delete this file as a left over could cause data loss.
+                logger.info("SSTable {} is considered a compaction left over by its descendants {}. C* 2.1.16 would have deleted this SSTable.",
+                            desc, descendants);
             }
         }
     }
@@ -1131,7 +1140,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 for (Memtable memtable : memtables)
                 {
                     // flush the memtable
-                    MoreExecutors.sameThreadExecutor().execute(memtable.flushRunnable());
+                    MoreExecutors.newDirectExecutorService().execute(memtable.flushRunnable());
                     reclaim(memtable);
                 }
 
@@ -1570,12 +1579,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public Collection<SSTableReader> getSSTables()
     {
-        return data.getSSTables();
+        return data.unsafeGetSSTables();
     }
 
     public Set<SSTableReader> getUncompactingSSTables()
     {
-        return data.getUncompactingSSTables();
+        return data.unsafeGetUncompactingSSTables();
     }
 
     public long[] getRecentSSTablesPerReadHistogram()
@@ -2111,19 +2120,24 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             protected Row computeNext()
             {
-                // pull a row out of the iterator
-                if (!iterator.hasNext())
-                    return endOfData();
+                Row current;
+                DecoratedKey key;
 
-                Row current = iterator.next();
-                DecoratedKey key = current.key;
+                do {
+                    // pull a row out of the iterator
+                    if (!iterator.hasNext())
+                        return endOfData();
 
-                if (!range.stopKey().isMinimum(partitioner) && range.stopKey().compareTo(key) < 0)
-                    return endOfData();
+                     current = iterator.next();
+                     key = current.key;
 
-                // skipping outside of assigned range
-                if (!range.contains(key))
-                    return computeNext();
+                    if (!range.stopKey().isMinimum(partitioner) && range.stopKey().compareTo(key) < 0) {
+                        return endOfData();
+                    }
+
+                    // skipping outside of assigned range
+                } while (!range.contains(key));
+
 
                 if (logger.isTraceEnabled())
                     logger.trace("scanned {}", metadata.getKeyValidator().getString(key.getKey()));
@@ -2337,7 +2351,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     {
         for (ColumnFamilyStore cfs : concatWithIndexes())
         {
-            final JSONArray filesJSONArr = new JSONArray();
+            final JsonArray filesJSONArr = new JsonArray();
             try (RefViewFragment currentView = cfs.selectAndReference(CANONICAL_SSTABLES))
             {
                 for (SSTableReader ssTable : currentView.sstables)
@@ -2360,10 +2374,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             createEphemeralSnapshotMarkerFile(snapshotName);
     }
 
-    private void writeSnapshotManifest(final JSONArray filesJSONArr, final String snapshotName)
+    private void writeSnapshotManifest(final JsonArray filesJSONArr, final String snapshotName)
     {
         final File manifestFile = directories.getSnapshotManifestFile(snapshotName);
-        final JSONObject manifestJSON = new JSONObject();
+        final JsonObject manifestJSON = new JsonObject();
         manifestJSON.put("files", filesJSONArr);
 
         try
@@ -2371,7 +2385,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             if (!manifestFile.getParentFile().exists())
                 manifestFile.getParentFile().mkdirs();
             PrintStream out = new PrintStream(manifestFile);
-            out.println(manifestJSON.toJSONString());
+            out.println(manifestJSON.toJson());
             out.close();
         }
         catch (IOException e)
@@ -2753,7 +2767,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 // doublecheck that we finished, instead of timing out
                 for (ColumnFamilyStore cfs : selfWithIndexes)
                 {
-                    if (!cfs.getDataTracker().getCompacting().isEmpty())
+                    if (!cfs.getDataTracker().unsafeGetCompacting().isEmpty())
                     {
                         logger.warn("Unable to cancel in-progress compactions for {}.  Perhaps there is an unusually large row in progress somewhere, or the system is simply overloaded.", metadata.cfName);
                         return null;
@@ -2785,7 +2799,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             public Iterable<SSTableReader> call() throws Exception
             {
-                assert data.getCompacting().isEmpty() : data.getCompacting();
+                assert data.unsafeGetCompacting().isEmpty() : data.unsafeGetCompacting();
                 Collection<SSTableReader> sstables = Lists.newArrayList(AbstractCompactionStrategy.filterSuspectSSTables(getSSTables()));
                 if (Iterables.isEmpty(sstables))
                     return Collections.emptyList();
@@ -3067,7 +3081,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
      */
     public ReplayPosition discardSSTables(long truncatedAt)
     {
-        assert data.getCompacting().isEmpty() : data.getCompacting();
+        assert data.unsafeGetCompacting().isEmpty() : data.unsafeGetCompacting();
 
         List<SSTableReader> truncatedSSTables = new ArrayList<SSTableReader>();
 

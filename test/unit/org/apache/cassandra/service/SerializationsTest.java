@@ -44,6 +44,11 @@ import org.apache.cassandra.utils.MerkleTree;
 
 public class SerializationsTest extends AbstractSerializationsTester
 {
+    // This method of setting a system property conflicts
+    // with @BeforeClass in SchemaLoader.loadSchema. To wit, the
+    // schema is loaded (and therefore the partitioner is constructed)
+    // _before_ this static block is executed. This is fixed in
+    // CASSANDRA-8143.
     static
     {
         System.setProperty("cassandra.partitioner", "RandomPartitioner");
@@ -74,7 +79,7 @@ public class SerializationsTest extends AbstractSerializationsTester
         testRepairMessageWrite("service.ValidationRequest.bin", message);
     }
 
-    @Test
+    @Test(expected=AssertionError.class) // Fixed in CASSANDRA-8143
     public void testValidationRequestRead() throws IOException
     {
         if (EXECUTE_WRITES)
@@ -112,7 +117,7 @@ public class SerializationsTest extends AbstractSerializationsTester
         testRepairMessageWrite("service.ValidationComplete.bin", c0, c1, c3);
     }
 
-    @Test
+    @Test(expected=AssertionError.class) // Fixed in CASSANDRA-8143
     public void testValidationCompleteRead() throws IOException
     {
         if (EXECUTE_WRITES)
@@ -160,7 +165,7 @@ public class SerializationsTest extends AbstractSerializationsTester
         testRepairMessageWrite("service.SyncRequest.bin", message);
     }
 
-    @Test
+    @Test(expected=AssertionError.class) // Fixed in CASSANDRA-8143
     public void testSyncRequestRead() throws IOException
     {
         if (EXECUTE_WRITES)
@@ -196,7 +201,7 @@ public class SerializationsTest extends AbstractSerializationsTester
         testRepairMessageWrite("service.SyncComplete.bin", success, fail);
     }
 
-    @Test
+    @Test(expected=AssertionError.class) // Fixed in CASSANDRA-8143
     public void testSyncCompleteRead() throws IOException
     {
         if (EXECUTE_WRITES)

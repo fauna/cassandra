@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 import org.apache.cassandra.auth.IAuthenticator;
 import org.apache.cassandra.config.CFMetaData;
@@ -257,6 +258,7 @@ implements org.apache.hadoop.mapred.RecordWriter<K, V>
     {
         public void output(String msg) {}
         public void debug(String msg) {}
+        public void debug(Supplier<String> msg) {}
         public void warn(String msg) {}
         public void warn(String msg, Throwable th) {}
     }

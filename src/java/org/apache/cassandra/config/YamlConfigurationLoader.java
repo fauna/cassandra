@@ -34,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
@@ -89,7 +90,7 @@ public class YamlConfigurationLoader implements ConfigurationLoader
         InputStream input = null;
         try
         {
-            logger.info("Loading settings from {}", url);
+            logger.debug("Loading settings from {}", url);
             byte[] configBytes;
             try (InputStream is = url.openStream())
             {
@@ -103,7 +104,8 @@ public class YamlConfigurationLoader implements ConfigurationLoader
 
             logConfig(configBytes);
             
-            org.yaml.snakeyaml.constructor.Constructor constructor = new org.yaml.snakeyaml.constructor.Constructor(Config.class);
+            org.yaml.snakeyaml.constructor.Constructor constructor =
+                    new org.yaml.snakeyaml.constructor.Constructor(Config.class, new LoaderOptions());
             TypeDescription seedDesc = new TypeDescription(SeedProviderDef.class);
             seedDesc.putMapPropertyType("parameters", String.class, String.class);
             constructor.addTypeDescription(seedDesc);
@@ -132,7 +134,7 @@ public class YamlConfigurationLoader implements ConfigurationLoader
                 configMap.put(sensitiveKey, "<REDACTED>");
             }
         }
-        logger.info("Node configuration:[" + Joiner.on("; ").join(configMap.entrySet()) + "]");
+        logger.debug("Node configuration:[" + Joiner.on("; ").join(configMap.entrySet()) + "]");
     }
 
     private static class MissingPropertiesChecker extends PropertyUtils
@@ -145,7 +147,7 @@ public class YamlConfigurationLoader implements ConfigurationLoader
         }
 
         @Override
-        public Property getProperty(Class<? extends Object> type, String name) throws IntrospectionException
+        public Property getProperty(Class<? extends Object> type, String name)
         {
             Property result = super.getProperty(type, name);
             if (result instanceof MissingProperty)

@@ -343,10 +343,22 @@ public class SSTableWriter extends SSTable
         return currentPosition;
     }
 
+    public void abortQuietly(String reason) {
+        abort(reason, true);
+    }
+
     /**
      * After failure, attempt to close the index writer and data file before deleting all temp components for the sstable
      */
-    public void abort()
+    public void abort() {
+        abort("SSTableWriter (unknown)", false);
+    }
+
+    public void abort(String reason) {
+        abort(reason, false);
+    }
+
+    public void abort(String reason, boolean quiet)
     {
         assert descriptor.type.isTemporary;
         if (iwriter == null && dataFile == null)
@@ -361,12 +373,19 @@ public class SSTableWriter extends SSTable
         Set<Component> components = SSTable.componentsFor(descriptor);
         try
         {
-            if (!components.isEmpty())
+            if (!components.isEmpty()) {
+                if (quiet) {
+                    logger.debug("Going to delete aborted compaction product {}. Reason: {}", descriptor, reason);
+                } else {
+                    logger.info("Going to delete aborted compaction product {}. Reason: {}", descriptor, reason);
+                }
+
                 SSTable.delete(descriptor, components);
+            }
         }
         catch (FSWriteError e)
         {
-            logger.error(String.format("Failed deleting temp components for %s", descriptor), e);
+            logger.error(String.format("Failed deleting temp components for %s. Reason: %s", descriptor, reason), e);
             throw e;
         }
     }

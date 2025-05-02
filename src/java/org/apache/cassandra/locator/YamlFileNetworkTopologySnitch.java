@@ -37,11 +37,13 @@ import org.apache.cassandra.utils.ResourceWatcher;
 import org.apache.cassandra.utils.WrappedRunnable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
 import com.google.common.collect.Sets;
 import com.google.common.net.InetAddresses;
@@ -210,7 +212,7 @@ public class YamlFileNetworkTopologySnitch
         final TypeDescription rackTypeDescription = new TypeDescription(Rack.class);
         rackTypeDescription.putListPropertyType("nodes", Node.class);
 
-        final Constructor configConstructor = new Constructor(TopologyConfig.class);
+        final Constructor configConstructor = new Constructor(TopologyConfig.class, new LoaderOptions());
         configConstructor.addTypeDescription(topologyConfigTypeDescription);
         configConstructor.addTypeDescription(topologyTypeDescription);
         configConstructor.addTypeDescription(rackTypeDescription);
@@ -447,7 +449,7 @@ public class YamlFileNetworkTopologySnitch
          */
         public String toString()
         {
-            return Objects.toStringHelper(this).add("datacenter", datacenter)
+            return MoreObjects.toStringHelper(this).add("datacenter", datacenter)
                     .add("rack", rack).add("dcLocalAddress", dcLocalAddress)
                     .toString();
         }

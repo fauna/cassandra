@@ -63,6 +63,10 @@ import org.codehaus.jackson.map.ObjectMapper;
 
 public class FBUtilities
 {
+    static {
+        preventIllegalAccessWarnings();
+    }
+    
     private static final Logger logger = LoggerFactory.getLogger(FBUtilities.class);
 
     private static ObjectMapper jsonMapper = new ObjectMapper(new JsonFactory());
@@ -727,6 +731,30 @@ public class FBUtilities
         catch (IOException e)
         {
             throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Hack to prevent the ugly "illegal access" warnings in Java 11+ like the following.
+     */
+    public static void preventIllegalAccessWarnings()
+    {
+        // Example "annoying" trace:
+        //        WARNING: An illegal reflective access operation has occurred
+        //        WARNING: Illegal reflective access by io.netty.util.internal.ReflectionUtil (file:...)
+        //        WARNING: Please consider reporting this to the maintainers of io.netty.util.internal.ReflectionUtil
+        //        WARNING: Use --illegal-access=warn to enable warnings of further illegal reflective access operations
+        //        WARNING: All illegal access operations will be denied in a future release
+        try
+        {
+            Class<?> c = Class.forName("jdk.internal.module.IllegalAccessLogger");
+            Field f = c.getDeclaredField("logger");
+            f.setAccessible(true);
+            f.set(null, null);
+        }
+        catch (Exception e)
+        {
+            // ignore
         }
     }
 }

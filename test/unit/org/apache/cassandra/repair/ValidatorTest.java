@@ -30,6 +30,7 @@ import org.apache.cassandra.db.BufferDecoratedKey;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
 import org.apache.cassandra.dht.IPartitioner;
@@ -136,6 +137,7 @@ public class ValidatorTest extends SchemaLoader
         }
 
         public void update(MessageDigest digest) { }
+        public void update(MessageDigest digest, OnDiskAtom.SerializerForWriting serializer) { }
 
         public ColumnStats columnStats()
         {

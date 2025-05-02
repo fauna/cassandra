@@ -215,8 +215,8 @@ public class IndexSummaryManager implements IndexSummaryManagerMBean
                 Set<SSTableReader> nonCompacting, allSSTables;
                 do
                 {
-                    allSSTables = cfStore.getDataTracker().getSSTables();
-                    nonCompacting = Sets.newHashSet(cfStore.getDataTracker().getUncompactingSSTables(allSSTables));
+                    allSSTables = cfStore.getDataTracker().unsafeGetSSTables();
+                    nonCompacting = Sets.newHashSet(cfStore.getDataTracker().unsafeGetUncompactingSSTables(allSSTables));
                 }
                 while (!(nonCompacting.isEmpty() || cfStore.getDataTracker().markCompacting(nonCompacting)));
                 allNonCompacting.putAll(cfStore.getDataTracker(), nonCompacting);

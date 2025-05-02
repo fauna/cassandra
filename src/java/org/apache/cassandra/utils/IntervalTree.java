@@ -149,7 +149,7 @@ public class IntervalTree<C, D, I extends Interval<C, D>> implements Iterable<I>
     public Iterator<I> iterator()
     {
         if (head == null)
-            return Iterators.<I>emptyIterator();
+            return Collections.<I>emptyIterator();
 
         return new TreeIterator(head);
     }

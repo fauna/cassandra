@@ -28,7 +28,7 @@ import org.apache.cassandra.io.sstable.ISSTableScanner;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.MergeIterator;
 
-public class CompactionIterable extends AbstractCompactionIterable
+public class CompactionIterable extends AbstractCompactionIterable<AbstractCompactedRow>
 {
     private static final Comparator<OnDiskAtomIterator> comparator = new Comparator<OnDiskAtomIterator>()
     {

@@ -78,10 +78,32 @@ public class BackgroundActivityMonitor
         reportThread.scheduleAtFixedRate(new BackgroundActivityReporter(), 1, 1, TimeUnit.SECONDS);
     }
 
+    private int indexOf(byte[] buff, int ch) {
+        for (int i = 0; i < buff.length; i++) {
+            if (buff[i] == ch) {
+                return i;
+            }
+        }
+        return -1;
+    }
     private long[] readAndCompute() throws IOException
     {
-        statsFile.seek(0);
-        StringTokenizer tokenizer = new StringTokenizer(statsFile.readLine());
+        int size = 100;  // 4 byte label + 10 longs + newline
+        String line = null;
+        do {
+            byte[] buf = new byte[size];
+            statsFile.seek(0);
+            statsFile.read(buf);
+            int end = indexOf(buf, '\n');
+            if (end == -1) {
+                size += 100;
+            } else {
+                line = new String(buf, 0, end);
+            }
+        } while (line == null && size < 10000);
+
+        assert line != null;
+        StringTokenizer tokenizer = new StringTokenizer(line);
         String name = tokenizer.nextToken();
         assert name.equalsIgnoreCase("cpu");
         long[] returned = new long[tokenizer.countTokens()];

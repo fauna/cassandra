@@ -339,9 +339,9 @@ public class RepairSession extends WrappedRunnable implements IEndpointStateChan
         completed.signalAll();
     }
 
-    public void failedSnapshot()
+    public void failedSnapshot(Throwable cause)
     {
-        exception = new IOException("Failed during snapshot creation.");
+        exception = new Exception(cause);
         forceShutdown();
     }
 

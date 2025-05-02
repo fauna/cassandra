@@ -103,7 +103,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
 
     private volatile boolean hintedHandOffPaused = false;
 
-    static final int maxHintTTL = Integer.parseInt(System.getProperty("cassandra.maxHintTTL", String.valueOf(Integer.MAX_VALUE)));
+    public static final int maxHintTTL = Integer.parseInt(System.getProperty("cassandra.maxHintTTL", String.valueOf(Integer.MAX_VALUE)));
 
     private final NonBlockingHashSet<InetAddress> queuedDeliveries = new NonBlockingHashSet<>();
 
@@ -267,7 +267,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
     protected synchronized void compact()
     {
         ArrayList<Descriptor> descriptors = new ArrayList<>();
-        for (SSTable sstable : hintStore.getDataTracker().getUncompactingSSTables())
+        for (SSTable sstable : hintStore.getDataTracker().unsafeGetUncompactingSSTables())
             descriptors.add(sstable.descriptor);
 
         if (descriptors.isEmpty())
@@ -377,7 +377,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         // rate limit is in bytes per second. Uses Double.MAX_VALUE if disabled (set to 0 in cassandra.yaml).
         // max rate is scaled by the number of nodes in the cluster (CASSANDRA-5272).
         int throttleInKB = DatabaseDescriptor.getHintedHandoffThrottleInKB()
-                           / (StorageService.instance.getTokenMetadata().getAllEndpoints().size() - 1);
+            / Math.max(1, StorageService.instance.getTokenMetadata().getAllEndpoints().size() - 1);
         RateLimiter rateLimiter = RateLimiter.create(throttleInKB == 0 ? Double.MAX_VALUE : throttleInKB * 1024);
 
         delivery:

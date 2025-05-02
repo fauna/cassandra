@@ -68,8 +68,11 @@ public class DatacenterSyncWriteResponseHandler extends AbstractWriteResponseHan
         }
     }
 
+    @Override
     public void response(MessageIn message)
     {
+        super.response(message);
+
         String dataCenter = message == null
                             ? DatabaseDescriptor.getLocalDataCenter()
                             : snitch.getDatacenter(message.from);

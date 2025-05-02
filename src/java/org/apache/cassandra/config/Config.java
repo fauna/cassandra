@@ -85,6 +85,8 @@ public class Config
 
     public volatile Long truncate_request_timeout_in_ms = 60000L;
 
+    public volatile Long repair_request_timeout_in_ms = 60000L;
+
     public Integer streaming_socket_timeout_in_ms = 86400000; //24 hours
 
     public boolean cross_node_timeout = false;

@@ -79,6 +79,13 @@ import org.apache.cassandra.utils.memory.SlabPool;
 
 public class DatabaseDescriptor
 {
+
+    static
+    {
+        // This static block covers most usages
+        FBUtilities.preventIllegalAccessWarnings();
+    }
+
     private static final Logger logger = LoggerFactory.getLogger(DatabaseDescriptor.class);
 
     /**
@@ -331,7 +338,7 @@ public class DatabaseDescriptor
         {
             conf.disk_access_mode = Config.DiskAccessMode.standard;
             indexAccessMode = conf.disk_access_mode;
-            logger.info("Windows environment detected.  DiskAccessMode set to {}, indexAccessMode {}", conf.disk_access_mode, indexAccessMode);
+            logger.debug("Windows environment detected.  DiskAccessMode set to {}, indexAccessMode {}", conf.disk_access_mode, indexAccessMode);
         }
         else
         {
@@ -340,18 +347,18 @@ public class DatabaseDescriptor
             {
                 conf.disk_access_mode = hasLargeAddressSpace() ? Config.DiskAccessMode.mmap : Config.DiskAccessMode.standard;
                 indexAccessMode = conf.disk_access_mode;
-                logger.info("DiskAccessMode 'auto' determined to be {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
+                logger.debug("DiskAccessMode 'auto' determined to be {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
             }
             else if (conf.disk_access_mode == Config.DiskAccessMode.mmap_index_only)
             {
                 conf.disk_access_mode = Config.DiskAccessMode.standard;
                 indexAccessMode = Config.DiskAccessMode.mmap;
-                logger.info("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
+                logger.debug("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
             }
             else
             {
                 indexAccessMode = conf.disk_access_mode;
-                logger.info("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
+                logger.debug("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
             }
         }
 
@@ -692,9 +699,9 @@ public class DatabaseDescriptor
             logger.info("Couldn't detect any schema definitions in local storage.");
             // peek around the data directories to see if anything is there.
             if (hasExistingNoSystemTables())
-                logger.info("Found keyspace data in data directories. Consider using cqlsh to define your schema.");
+                logger.debug("Found keyspace data in data directories. Consider using cqlsh to define your schema.");
             else
-                logger.info("To create keyspaces and column families, see 'help create' in cqlsh.");
+                logger.debug("To create keyspaces and column families, see 'help create' in cqlsh.");
         }
         else
         {
@@ -1031,6 +1038,16 @@ public class DatabaseDescriptor
         return conf.cross_node_timeout;
     }
 
+    public static long getRepairRpcTimeout()
+    {
+        return conf.repair_request_timeout_in_ms;
+    }
+
+    public static void setRepairRpcTimeout(Long timeOutInMillis)
+    {
+        conf.repair_request_timeout_in_ms = timeOutInMillis;
+    }
+
     // not part of the Verb enum so we can change timeouts easily via JMX
     public static long getTimeout(MessagingService.Verb verb)
     {
@@ -1050,6 +1067,8 @@ public class DatabaseDescriptor
                 return getWriteRpcTimeout();
             case COUNTER_MUTATION:
                 return getCounterWriteRpcTimeout();
+            case REPAIR_MESSAGE:
+                return getRepairRpcTimeout();
             default:
                 return getRpcTimeout();
         }

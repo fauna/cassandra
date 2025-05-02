@@ -89,8 +89,6 @@ public final class MessagingService implements MessagingServiceMBean
      */
     public static final int PROTOCOL_MAGIC = 0xCA552DFA;
 
-    private boolean allNodesAtLeast21 = true;
-
     /* All verb handler identifiers */
     public enum Verb
     {
@@ -250,7 +248,7 @@ public final class MessagingService implements MessagingServiceMBean
      * a placeholder class that means "deserialize using the callback." We can't implement this without
      * special-case code in InboundTcpConnection because there is no way to pass the message id to IVersionedSerializer.
      */
-    static class CallbackDeterminedSerializer implements IVersionedSerializer<Object>
+    public static class CallbackDeterminedSerializer implements IVersionedSerializer<Object>
     {
         public static final CallbackDeterminedSerializer instance = new CallbackDeterminedSerializer();
 
@@ -316,9 +314,6 @@ public final class MessagingService implements MessagingServiceMBean
 
     private final List<ILatencySubscriber> subscribers = new ArrayList<ILatencySubscriber>();
 
-    // protocol versions of the other nodes in the cluster
-    private final ConcurrentMap<InetAddress, Integer> versions = new NonBlockingHashMap<InetAddress, Integer>();
-
     private static class MSHandle
     {
         public static final MessagingService instance = new MessagingService(false);
@@ -363,6 +358,7 @@ public final class MessagingService implements MessagingServiceMBean
             public Object apply(Pair<Integer, ExpiringMap.CacheableObject<CallbackInfo>> pair)
             {
                 final CallbackInfo expiredCallbackInfo = pair.right.value;
+                logger.debug("Expired callback for {} after {}ms.", expiredCallbackInfo.target, pair.right.timeout);
                 maybeAddLatency(expiredCallbackInfo.callback, expiredCallbackInfo.target, pair.right.timeout);
                 ConnectionMetrics.totalTimeouts.mark();
                 getConnectionPool(expiredCallbackInfo.target).incrementTimeout();
@@ -815,7 +811,7 @@ public final class MessagingService implements MessagingServiceMBean
 
     public boolean areAllNodesAtLeast21()
     {
-        return allNodesAtLeast21;
+        return true;
     }
 
     /**
@@ -823,68 +819,31 @@ public final class MessagingService implements MessagingServiceMBean
      */
     public int setVersion(InetAddress endpoint, int version)
     {
-        logger.debug("Setting version {} for {}", version, endpoint);
-        if (version < VERSION_21)
-            allNodesAtLeast21 = false;
-        Integer v = versions.put(endpoint, version);
-
-        // if the version was increased to 2.0 or later, see if all nodes are >= 2.0 now
-        if (v != null && v < VERSION_21 && version >= VERSION_21)
-            refreshAllNodesAtLeast21();
-
-        return v == null ? version : v;
+        return MessagingService.current_version;
     }
 
     public void resetVersion(InetAddress endpoint)
     {
-        logger.debug("Resetting version for {}", endpoint);
-        Integer removed = versions.remove(endpoint);
-        if (removed != null && removed <= VERSION_21)
-            refreshAllNodesAtLeast21();
-    }
-
-    private void refreshAllNodesAtLeast21()
-    {
-        for (Integer version: versions.values())
-        {
-            if (version < VERSION_21)
-            {
-                allNodesAtLeast21 = false;
-                return;
-            }
-        }
-        allNodesAtLeast21 = true;
     }
 
     public int getVersion(InetAddress endpoint)
     {
-        Integer v = versions.get(endpoint);
-        if (v == null)
-        {
-            // we don't know the version. assume current. we'll know soon enough if that was incorrect.
-            logger.trace("Assuming current protocol version for {}", endpoint);
-            return MessagingService.current_version;
-        }
-        else
-            return Math.min(v, MessagingService.current_version);
+        return MessagingService.current_version;
     }
 
     public int getVersion(String endpoint) throws UnknownHostException
     {
-        return getVersion(InetAddress.getByName(endpoint));
+        return MessagingService.current_version;
     }
 
     public int getRawVersion(InetAddress endpoint)
     {
-        Integer v = versions.get(endpoint);
-        if (v == null)
-            throw new IllegalStateException("getRawVersion() was called without checking knowsVersion() result first");
-        return v;
+        return MessagingService.current_version;
     }
 
     public boolean knowsVersion(InetAddress endpoint)
     {
-        return versions.containsKey(endpoint);
+        return true;
     }
 
 

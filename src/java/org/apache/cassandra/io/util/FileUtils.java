@@ -24,6 +24,10 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -32,9 +36,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.text.DecimalFormat;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-
-import sun.nio.ch.DirectBuffer;
+import java.util.function.Function;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +49,8 @@ import org.apache.cassandra.io.FSErrorHandler;
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
-import org.apache.cassandra.utils.JVMStabilityInspector;
+import sun.misc.Unsafe;
+import sun.nio.ch.DirectBuffer;
 
 public final class FileUtils
 {
@@ -56,24 +61,60 @@ public final class FileUtils
     private static final double TB = 1024*1024*1024*1024d;
 
     private static final DecimalFormat df = new DecimalFormat("#.##");
-    private static final boolean canCleanDirectBuffers;
     private static final AtomicReference<FSErrorHandler> fsErrorHandler = new AtomicReference<>();
+
+    private static Function<ByteBuffer, Boolean> cleaner = null;
 
     static
     {
-        boolean canClean = false;
-        try
-        {
-            ByteBuffer buf = ByteBuffer.allocateDirect(1);
-            ((DirectBuffer) buf).cleaner().clean();
-            canClean = true;
+        installCleaner();
+    }
+
+    private static void installCleaner() {
+        ByteBuffer buf = ByteBuffer.allocateDirect(1);
+
+
+        try {
+            Class unsafeCls = sun.misc.Unsafe.class;
+            Field f = unsafeCls.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            final Unsafe unsafe = (Unsafe) f.get(null);
+
+            final Method invokeM = unsafeCls.getDeclaredMethod("invokeCleaner", ByteBuffer.class);
+            final MethodHandle invokeMH = MethodHandles.lookup().unreflect(invokeM);
+
+
+            cleaner = new Function<ByteBuffer, Boolean>() {
+                @Override
+                public Boolean apply(ByteBuffer byteBuffer) {
+                    try {
+                        invokeMH.invoke(unsafe, byteBuffer);
+                        return true;
+                    } catch (Throwable throwable) {
+                        return false;
+                    }
+                }
+            };
+
+            if (cleaner.apply(buf)) return;
+        } catch (Exception ignored) {
         }
-        catch (Throwable t)
-        {
-            JVMStabilityInspector.inspectThrowable(t);
-            logger.info("Cannot initialize un-mmaper.  (Are you using a non-Oracle JVM?)  Compacted data files will not be removed promptly.  Consider using an Oracle JVM or using standard disk access mode");
-        }
-        canCleanDirectBuffers = canClean;
+
+        cleaner = new Function<ByteBuffer, Boolean>() {
+            @Override
+            public Boolean apply(ByteBuffer byteBuffer) {
+                try {
+                    ((DirectBuffer) byteBuffer).cleaner().clean();
+                    return true;
+                } catch (Exception e) {
+                    return false;
+                }
+            }
+        };
+
+        if (cleaner.apply(buf)) return;
+
+        cleaner = null;
     }
 
     public static void createHardLink(String from, String to)
@@ -98,14 +139,46 @@ public final class FileUtils
         }
     }
 
+    private static final AtomicLong tempFileNum = new AtomicLong();
+
+    /**
+     * Pretty much like {@link File#createTempFile(String, String, File)}, but with
+     * the guarantee that the "random" part of the generated file name between
+     * {@code prefix} and {@code suffix} is a positive, increasing {@code long} value.
+     */
     public static File createTempFile(String prefix, String suffix, File directory)
     {
-        try
-        {
-            return File.createTempFile(prefix, suffix, directory);
-        }
-        catch (IOException e)
-        {
+        // Do not use java.io.File.createTempFile(), because some tests rely on the
+        // behavior that the "random" part in the temp file name is a positive 'long'.
+        // However, at least since Java 9 the code to generate the "random" part
+        // uses an _unsigned_ random long generated like this:
+        // Long.toUnsignedString(new java.util.Random.nextLong())
+        try {
+            while (true) {
+                // The contract of File.createTempFile() says, that it must not return
+                // the same file name again. We do that here in a very simple way,
+                // that probably doesn't cover all edge cases. Just rely on system
+                // wall clock and return strictly increasing values from that.
+                long num = Math.max(System.currentTimeMillis(), tempFileNum.get() + 1);
+                while (true) {
+                    long prev = tempFileNum.get();
+                    if (num > prev) {
+                        if (tempFileNum.compareAndSet(prev, num))
+                            break;
+                        continue;
+                    }
+                    num++;
+                }
+
+                // We have a positive long here, which is safe to use for example
+                // for CommitLogTest.
+                String timePart = Long.toString(num);
+                String fileName = prefix + timePart + suffix;
+                File candidate = new File(directory, fileName);
+                if (candidate.createNewFile())
+                    return candidate;
+            }
+        } catch (IOException e) {
             throw new FSWriteError(e, directory);
         }
     }
@@ -280,12 +353,16 @@ public final class FileUtils
 
     public static boolean isCleanerAvailable()
     {
-        return canCleanDirectBuffers;
+        return cleaner != null;
     }
 
     public static void clean(MappedByteBuffer buffer)
     {
-        ((DirectBuffer) buffer).cleaner().clean();
+        if (buffer == null || !buffer.isDirect() || !isCleanerAvailable()) {
+            return;
+        }
+
+        cleaner.apply(buffer);
     }
 
     public static void createDirectory(String directory)

@@ -58,6 +58,11 @@ public class SSTableRewriterTest extends SchemaLoader
 {
     private static final String KEYSPACE = "Keyspace1";
     private static final String CF = "Standard1";
+
+    static {
+        System.setProperty("fauna.allow-splash", "true");
+    }
+
     @Test
     public void basicTest() throws InterruptedException
     {
@@ -936,7 +941,7 @@ public class SSTableRewriterTest extends SchemaLoader
                 }
             }
         }
-        assertTrue(cfs.getDataTracker().getCompacting().isEmpty());
+        assertTrue(cfs.getDataTracker().unsafeGetCompacting().isEmpty());
         assertTrue("" + cfs.getTotalDiskSpaceUsed(), cfs.getTotalDiskSpaceUsed() >= 0);
     }
 

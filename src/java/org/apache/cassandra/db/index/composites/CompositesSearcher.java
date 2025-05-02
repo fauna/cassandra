@@ -108,8 +108,8 @@ public class CompositesSearcher extends SecondaryIndexSearcher
          * indexed row.
          */
         final AbstractBounds<RowPosition> range = filter.dataRange.keyRange();
-        ByteBuffer startKey = range.left instanceof DecoratedKey ? ((DecoratedKey)range.left).getKey() : ByteBufferUtil.EMPTY_BYTE_BUFFER;
-        ByteBuffer endKey = range.right instanceof DecoratedKey ? ((DecoratedKey)range.right).getKey() : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+        ByteBuffer startKey = range.left.kind() == DecoratedKey.Kind.ROW_KEY ? ((DecoratedKey)range.left).getKey() : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+        ByteBuffer endKey = range.right.kind() == DecoratedKey.Kind.ROW_KEY ? ((DecoratedKey)range.right).getKey() : ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
         final CellNameType baseComparator = baseCfs.getComparator();
         final CellNameType indexComparator = index.getIndexCfs().getComparator();

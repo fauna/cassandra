@@ -26,8 +26,8 @@ import java.util.zip.Checksum;
 
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
-import org.apache.cassandra.io.util.CompressedPoolingSegmentedFile;
-import org.apache.cassandra.io.util.PoolingSegmentedFile;
+import org.apache.cassandra.io.util.CompressedSegmentedFile;
+import org.apache.cassandra.io.util.SegmentedFile;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -41,7 +41,7 @@ public class CompressedRandomAccessReader extends RandomAccessReader
     {
         return open(dataFilePath, metadata, null);
     }
-    public static CompressedRandomAccessReader open(String path, CompressionMetadata metadata, CompressedPoolingSegmentedFile owner)
+    public static CompressedRandomAccessReader open(String path, CompressionMetadata metadata, CompressedSegmentedFile owner)
     {
         try
         {
@@ -65,7 +65,7 @@ public class CompressedRandomAccessReader extends RandomAccessReader
     // raw checksum bytes
     private final ByteBuffer checksumBytes = ByteBuffer.wrap(new byte[4]);
 
-    protected CompressedRandomAccessReader(String dataFilePath, CompressionMetadata metadata, PoolingSegmentedFile owner) throws FileNotFoundException
+    protected CompressedRandomAccessReader(String dataFilePath, CompressionMetadata metadata, SegmentedFile owner) throws FileNotFoundException
     {
         super(new File(dataFilePath), metadata.chunkLength(), metadata.compressedFileLength, owner);
         this.metadata = metadata;

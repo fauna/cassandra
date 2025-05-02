@@ -392,7 +392,7 @@ public class Memtable
                 {
                     logger.info("Completed flushing {}; nothing needed to be retained.  Commitlog position was {}",
                                 writer.getFilename(), context);
-                    writer.abort();
+                    writer.abort("Flush Task (empty file)");
                     ssTable = null;
                 }
 
@@ -403,7 +403,7 @@ public class Memtable
             }
             catch (Throwable e)
             {
-                writer.abort();
+                writer.abort(String.format("Flush Task (%s)", e.getMessage()));
                 throw Throwables.propagate(e);
             }
         }

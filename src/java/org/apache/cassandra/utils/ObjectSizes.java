@@ -23,7 +23,6 @@ package org.apache.cassandra.utils;
 
 import java.nio.ByteBuffer;
 
-import org.github.jamm.MemoryLayoutSpecification;
 import org.github.jamm.MemoryMeter;
 
 /**
@@ -31,10 +30,11 @@ import org.github.jamm.MemoryMeter;
  */
 public class ObjectSizes
 {
-    private static final MemoryMeter meter = new MemoryMeter()
+    private static final MemoryMeter meter = MemoryMeter.builder()
                                              .omitSharedBufferOverhead()
-                                             .withGuessing(MemoryMeter.Guess.FALLBACK_UNSAFE)
-                                             .ignoreKnownSingletons();
+                                             .withGuessing(MemoryMeter.Guess.BEST)
+                                             .ignoreKnownSingletons()
+                                             .build();
 
     private static final long BUFFER_EMPTY_SIZE = measure(ByteBufferUtil.EMPTY_BYTE_BUFFER);
     private static final long STRING_EMPTY_SIZE = measure("");
@@ -46,7 +46,7 @@ public class ObjectSizes
      */
     public static long sizeOfArray(byte[] bytes)
     {
-        return sizeOfArray(bytes.length, 1);
+        return meter.sizeOfArray(bytes);
     }
 
     /**
@@ -56,7 +56,7 @@ public class ObjectSizes
      */
     public static long sizeOfArray(long[] longs)
     {
-        return sizeOfArray(longs.length, 8);
+        return meter.sizeOfArray(longs);
     }
 
     /**
@@ -66,7 +66,7 @@ public class ObjectSizes
      */
     public static long sizeOfArray(int[] ints)
     {
-        return sizeOfArray(ints.length, 4);
+        return meter.sizeOfArray(ints);
     }
 
     /**
@@ -76,7 +76,7 @@ public class ObjectSizes
      */
     public static long sizeOfReferenceArray(int length)
     {
-        return sizeOfArray(length, MemoryLayoutSpecification.SPEC.getReferenceSize());
+        return meter.sizeOfArray(length, Object.class);
     }
 
     /**
@@ -87,11 +87,6 @@ public class ObjectSizes
     public static long sizeOfArray(Object[] objects)
     {
         return sizeOfReferenceArray(objects.length);
-    }
-
-    private static long sizeOfArray(int length, long elementSize)
-    {
-        return MemoryLayoutSpecification.sizeOfArray(length, elementSize);
     }
 
     /**
@@ -124,7 +119,7 @@ public class ObjectSizes
         // allocated, so amortized over all the allocations the overhead is negligible and better to undercount than over)
         if (buffer.capacity() > buffer.remaining())
             return buffer.remaining();
-        return BUFFER_EMPTY_SIZE + sizeOfArray(buffer.capacity(), 1);
+        return BUFFER_EMPTY_SIZE + meter.sizeOfArray(buffer.capacity(), byte.class);
     }
 
     public static long sizeOnHeapExcludingData(ByteBuffer buffer)
@@ -139,7 +134,7 @@ public class ObjectSizes
      */
     public static long sizeOf(String str)
     {
-        return STRING_EMPTY_SIZE + sizeOfArray(str.length(), 2);
+        return STRING_EMPTY_SIZE + meter.sizeOfArray(str.length(), char.class);
     }
 
     /**

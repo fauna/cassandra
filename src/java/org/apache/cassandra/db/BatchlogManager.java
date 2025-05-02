@@ -351,9 +351,9 @@ public class BatchlogManager implements BatchlogManagerMBean
                     int ttl = calculateHintTTL(replayingMutations);
                     ReplayWriteResponseHandler handler = replayHandlers.get(i);
 
-                    if (ttl > 0 && handler != null)
+                    if (handler != null)
                         for (InetAddress endpoint : handler.undelivered)
-                            StorageProxy.writeHintForMutation(undeliveredMutation, writtenAt, ttl, endpoint);
+                            StorageProxy.writeHintForMutation(undeliveredMutation, writtenAt, endpoint);
                 }
             }
             catch (IOException e)
@@ -394,7 +394,7 @@ public class BatchlogManager implements BatchlogManagerMBean
                 else if (FailureDetector.instance.isAlive(endpoint))
                     liveEndpoints.add(endpoint); // will try delivering directly instead of writing a hint.
                 else
-                    StorageProxy.writeHintForMutation(mutation, writtenAt, ttl, endpoint);
+                    StorageProxy.writeHintForMutation(mutation, writtenAt, endpoint);
             }
 
             if (liveEndpoints.isEmpty())

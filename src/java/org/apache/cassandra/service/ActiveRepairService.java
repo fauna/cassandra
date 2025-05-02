@@ -438,7 +438,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             {
                 removeParentRepairSession(parentRepairSession);
             }
-        }, MoreExecutors.sameThreadExecutor());
+        }, MoreExecutors.newDirectExecutorService());
 
         return allAntiCompactionResults;
     }

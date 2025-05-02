@@ -85,8 +85,8 @@ public class KeysSearcher extends SecondaryIndexSearcher
          */
         final AbstractBounds<RowPosition> range = filter.dataRange.keyRange();
         CellNameType type = index.getIndexCfs().getComparator();
-        final Composite startKey = range.left instanceof DecoratedKey ? type.make(((DecoratedKey)range.left).getKey()) : Composites.EMPTY;
-        final Composite endKey = range.right instanceof DecoratedKey ? type.make(((DecoratedKey)range.right).getKey()) : Composites.EMPTY;
+        final Composite startKey = range.left.kind() == DecoratedKey.Kind.ROW_KEY ? type.make(((DecoratedKey)range.left).getKey()) : Composites.EMPTY;
+        final Composite endKey = range.right.kind() == DecoratedKey.Kind.ROW_KEY ? type.make(((DecoratedKey)range.right).getKey()) : Composites.EMPTY;
 
         final CellName primaryColumn = baseCfs.getComparator().cellFromByteBuffer(primary.column);
 

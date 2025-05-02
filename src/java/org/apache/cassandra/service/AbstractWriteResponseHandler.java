@@ -18,8 +18,8 @@
 package org.apache.cassandra.service;
 
 import java.net.InetAddress;
-import java.util.Collection;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 
 import com.google.common.collect.Iterables;
 
@@ -28,9 +28,12 @@ import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.net.IAsyncCallback;
 import org.apache.cassandra.net.MessageIn;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
+import org.apache.cassandra.utils.*;
 
 public abstract class AbstractWriteResponseHandler implements IAsyncCallback
 {
@@ -42,6 +45,13 @@ public abstract class AbstractWriteResponseHandler implements IAsyncCallback
     protected final Runnable callback;
     protected final Collection<InetAddress> pendingEndpoints;
     private final WriteType writeType;
+
+    private final SimpleCondition finalizeCondition = new SimpleCondition();
+    private final long requestTimeout;
+
+    protected volatile int totalResponses;
+    private static final AtomicIntegerFieldUpdater<AbstractWriteResponseHandler> totalResponsesUpdater
+            = AtomicIntegerFieldUpdater.newUpdater(AbstractWriteResponseHandler.class, "totalResponses");
 
     /**
      * @param callback A callback to be called when the write is successful.
@@ -60,14 +70,16 @@ public abstract class AbstractWriteResponseHandler implements IAsyncCallback
         this.naturalEndpoints = naturalEndpoints;
         this.callback = callback;
         this.writeType = writeType;
+
+        this.requestTimeout = writeType == WriteType.COUNTER
+                            ? DatabaseDescriptor.getCounterWriteRpcTimeout()
+                            : DatabaseDescriptor.getWriteRpcTimeout();
+
+        this.totalResponses = naturalEndpoints.size() + pendingEndpoints.size();
     }
 
     public void get() throws WriteTimeoutException
     {
-        long requestTimeout = writeType == WriteType.COUNTER
-                            ? DatabaseDescriptor.getCounterWriteRpcTimeout()
-                            : DatabaseDescriptor.getWriteRpcTimeout();
-
         long timeout = TimeUnit.MILLISECONDS.toNanos(requestTimeout) - (System.nanoTime() - start);
 
         boolean success;
@@ -93,6 +105,22 @@ public abstract class AbstractWriteResponseHandler implements IAsyncCallback
         }
     }
 
+    public int getUndelivered()
+    {
+        long timeout = TimeUnit.MILLISECONDS.toNanos(requestTimeout) - (System.nanoTime() - start);
+
+        try
+        {
+            finalizeCondition.await(timeout, TimeUnit.NANOSECONDS);
+        }
+        catch (InterruptedException ex)
+        {
+            throw new AssertionError(ex);
+        }
+
+        return totalResponses;
+    }
+
     protected int totalBlockFor()
     {
         // During bootstrap, we have to include the pending endpoints or we may fail the consistency level
@@ -103,7 +131,10 @@ public abstract class AbstractWriteResponseHandler implements IAsyncCallback
     protected abstract int ackCount();
 
     /** null message means "response from local write" */
-    public abstract void response(MessageIn msg);
+    public void response(MessageIn msg) {
+        if (totalResponsesUpdater.decrementAndGet(this) == 0)
+            finalizeCondition.signalAll();
+    }
 
     public void assureSufficientLiveNodes() throws UnavailableException
     {

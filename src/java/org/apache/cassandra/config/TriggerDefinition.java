@@ -20,6 +20,7 @@ package org.apache.cassandra.config;
 
 import java.util.*;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
 
 import org.apache.cassandra.cql3.QueryProcessor;
@@ -157,6 +158,6 @@ public class TriggerDefinition
     @Override
     public String toString()
     {
-        return Objects.toStringHelper(this).add("name", name).add("classOption", classOption).toString();
+        return MoreObjects.toStringHelper(this).add("name", name).add("classOption", classOption).toString();
     }
 }

@@ -189,7 +189,7 @@ public class CompactionManager implements CompactionManagerMBean
     public boolean isCompacting(Iterable<ColumnFamilyStore> cfses)
     {
         for (ColumnFamilyStore cfs : cfses)
-            if (!cfs.getDataTracker().getCompacting().isEmpty())
+            if (!cfs.getDataTracker().unsafeGetCompacting().isEmpty())
                 return true;
         return false;
     }
@@ -407,9 +407,12 @@ public class CompactionManager implements CompactionManagerMBean
 
     public AllSSTableOpStatus performCleanup(final ColumnFamilyStore cfStore, int jobs) throws InterruptedException, ExecutionException
     {
+        return performCleanup(cfStore, StorageService.instance.getLocalRanges(cfStore.keyspace.getName()), jobs);
+    }
+
+    public AllSSTableOpStatus performCleanup(final ColumnFamilyStore cfStore, final Collection<Range<Token>> ranges, int jobs) throws InterruptedException, ExecutionException
+    {
         assert !cfStore.isIndex();
-        Keyspace keyspace = cfStore.keyspace;
-        final Collection<Range<Token>> ranges = StorageService.instance.getLocalRanges(keyspace.getName());
         if (ranges.isEmpty())
         {
             logger.info("Cleanup cannot run before a node has joined the ring");
@@ -448,7 +451,7 @@ public class CompactionManager implements CompactionManagerMBean
                 boolean success = false;
                 while (!success)
                 {
-                    for (SSTableReader compactingSSTable : cfs.getDataTracker().getCompacting())
+                    for (SSTableReader compactingSSTable : cfs.getDataTracker().unsafeGetCompacting())
                         sstables.releaseIfHolds(compactingSSTable);
                     Set<SSTableReader> compactedSSTables = new HashSet<>();
                     for (SSTableReader sstable : sstables)
@@ -592,6 +595,34 @@ public class CompactionManager implements CompactionManagerMBean
         if (nonEmptyTasks > 1)
             logger.info("Cannot perform a full major compaction as repaired and unrepaired sstables cannot be compacted together. These two set of sstables will be compacted separately.");
         return futures;
+    }
+
+    /**
+     * Submits a compaction task for background execution.
+     *
+     * This method is intended from use from outside Cassandra, in
+     * FaunaDB's storage subsystem to integrate non-transactional
+     * document garbage collection into Cassandra's compaction
+     * process.
+     */
+    public Future<?> submitTask(final AbstractCompactionTask task)
+    {
+        Runnable runnable = new WrappedRunnable()
+        {
+                protected void runMayThrow() throws IOException
+                {
+                    task.execute(metrics);
+                }
+        };
+
+        if (executor.isShutdown())
+        {
+            logger.info("Compaction executor has shut down, not submitting task");
+            Throwable ex = new CancellationException("Compaction executor has shut down");
+            return Futures.immediateFailedFuture(ex);
+        }
+
+        return executor.submit(runnable);
     }
 
     public void forceUserDefinedCompaction(String dataFiles)
@@ -852,7 +883,7 @@ public class CompactionManager implements CompactionManagerMBean
         }
         catch (Throwable e)
         {
-            writer.abort();
+            writer.abort(String.format("Compaction Manager cleanup (%s)", e.getMessage()));
             throw Throwables.propagate(e);
         }
         finally
@@ -1180,8 +1211,9 @@ public class CompactionManager implements CompactionManagerMBean
             {
                 JVMStabilityInspector.inspectThrowable(e);
                 logger.error("Error anticompacting " + sstable, e);
-                repairedSSTableWriter.abort();
-                unRepairedSSTableWriter.abort();
+                String reason = String.format("Compaction Manager anticompacting (%s)", e.getMessage());
+                repairedSSTableWriter.abort(reason);
+                unRepairedSSTableWriter.abort(reason);
             }
         }
         String format = "Repaired {} keys of {} for {}/{}";

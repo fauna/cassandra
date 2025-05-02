@@ -23,18 +23,14 @@ import java.util.*;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.primitives.Ints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.RowPosition;
 import org.apache.cassandra.dht.Bounds;
@@ -46,6 +42,12 @@ import org.apache.cassandra.utils.Pair;
 public class LeveledManifest
 {
     private static final Logger logger = LoggerFactory.getLogger(LeveledManifest.class);
+
+    /**
+     * Cassandra's default value for the minimum number of sstables needed for STCS
+     * in L0.
+     */
+    private static final int DEFAULT_MIN_COMPACTING_L0 = 2;
 
     /**
      * limit the number of L0 sstables we do at once, because compaction bloom filter creation
@@ -60,15 +62,42 @@ public class LeveledManifest
      */
     private static final int NO_COMPACTION_LIMIT = 25;
 
+    /**
+     * Sets the minimum number of sstables needed in L0 to perform a STCS. It has to be between
+     * DEFAULT_MIN_COMPACTING_L0 and MAX_COMPACTING_L0.
+     * In Fauna, we flush often to keep the persisted timestamp moving forward so we always emit small sstables.
+     * With Cassandra's default value, we end up spending all of our time in compactions
+     * on taking a small newly flushed sstable and compacting it with an increasingly larger one,
+     * up to maxSSTableSizeInMB. Using a slightly larger minimum cuts down our write amplification and resource
+     * utilization for no downside.
+     */
+    private static final String MIN_COMPACTING_L0 = "fauna.min-l0-compacting";
+
+    /**
+     * Similar to the option above, except that it only considers the total number of files
+     * that will be rewritten during the compaction.
+     *
+     * This is evaluated only if MAX_SPLASH_PERCENT_OPTION would allow the compaction.
+     */
+    private static final String MAX_SPLASH_FILE_OPTION = "fauna.max-splash-files";
+
+    /**
+     * When true, disables splash prevention by allowing compactions
+     * to rewrite an arbitrary number of bytes and/or files.
+     */
+    private static final String ALLOW_SPLASH_OPTION = "fauna.allow-splash";
+
     private final ColumnFamilyStore cfs;
     @VisibleForTesting
     protected final List<SSTableReader>[] generations;
     private final RowPosition[] lastCompactedKeys;
     private final long maxSSTableSizeInBytes;
+    private final int minL0Compacting;
+    private final int maxSplashFiles;
     private final SizeTieredCompactionStrategyOptions options;
     private final int [] compactionCounter;
 
-    LeveledManifest(ColumnFamilyStore cfs, int maxSSTableSizeInMB, SizeTieredCompactionStrategyOptions options)
+    public LeveledManifest(ColumnFamilyStore cfs, int maxSSTableSizeInMB, SizeTieredCompactionStrategyOptions options)
     {
         this.cfs = cfs;
         this.maxSSTableSizeInBytes = maxSSTableSizeInMB * 1024L * 1024L;
@@ -83,9 +112,44 @@ public class LeveledManifest
         for (int i = 0; i < generations.length; i++)
         {
             generations[i] = new ArrayList<>();
-            lastCompactedKeys[i] = cfs.partitioner.getMinimumToken().minKeyBound();
+            // Start at a random token to encourage compaction through the token space.
+            // It used to start at the beginning each run of the process, so the end of the
+            // space wouldn't get compacted if restarts were frequent enough compared to
+            // the amount and velocity of data.
+            lastCompactedKeys[i] = cfs.partitioner.getRandomToken().minKeyBound();
         }
         compactionCounter = new int[n];
+
+        String splashFilesOption = System.getProperty(MAX_SPLASH_FILE_OPTION, "30");
+        int optFiles;
+        try {
+            optFiles = Integer.valueOf(splashFilesOption);
+
+            // Clamp the input.
+            optFiles = Math.min(optFiles, Integer.MAX_VALUE);
+        } catch (NumberFormatException ex) {
+            logger.warn("Invalid value for {}: {}. Disabling splash prevention.",
+                    MAX_SPLASH_FILE_OPTION, splashFilesOption);
+            optFiles = Integer.MAX_VALUE;
+        }
+
+        String minCompactingL0Option =
+                System.getProperty(MIN_COMPACTING_L0, Integer.toString(DEFAULT_MIN_COMPACTING_L0));
+        int minL0;
+        try {
+            minL0 = Integer.valueOf(minCompactingL0Option);
+
+            // Value should be between C*'s default and the max number of L0 files.
+            minL0 = Math.max(minL0, DEFAULT_MIN_COMPACTING_L0);
+            minL0 = Math.min(minL0, MAX_COMPACTING_L0);
+        } catch (NumberFormatException ex) {
+            logger.warn("Invalid value for {}: {}. Setting to C*'s default of {}.",
+                    MIN_COMPACTING_L0, minCompactingL0Option, DEFAULT_MIN_COMPACTING_L0);
+            minL0 = DEFAULT_MIN_COMPACTING_L0;
+        }
+
+        this.maxSplashFiles = optFiles;
+        this.minL0Compacting = minL0;
     }
 
     public static LeveledManifest create(ColumnFamilyStore cfs, int maxSSTableSize, List<SSTableReader> sstables)
@@ -118,7 +182,7 @@ public class LeveledManifest
         if (canAddSSTable(reader))
         {
             // adding the sstable does not cause overlap in the level
-            logger.debug("Adding {} to L{}", reader, level);
+            logger.info("Adding {} to L{}", reader, level);
             generations[level].add(reader);
         }
         else
@@ -139,6 +203,8 @@ public class LeveledManifest
             {
                 logger.error("Could not change sstable level - adding it at level 0 anyway, we will find it at restart.", e);
             }
+
+            logger.info("Can't add {} to L{}, adding to L0 instead", reader, level);
             generations[0].add(reader);
         }
     }
@@ -269,7 +335,7 @@ public class LeveledManifest
      * @return highest-priority sstables to compact, and level to compact them to
      * If no compactions are necessary, will return null
      */
-    public synchronized CompactionCandidate getCompactionCandidates()
+    public synchronized CompactionCandidate getCompactionCandidates(final int gcBefore, double tombstoneThreshold)
     {
         // LevelDB gives each level a score of how much data it contains vs its ideal amount, and
         // compacts the level with the highest score. But this falls apart spectacularly once you
@@ -305,9 +371,9 @@ public class LeveledManifest
                 continue; // mostly this just avoids polluting the debug log with zero scores
             // we want to calculate score excluding compacting ones
             Set<SSTableReader> sstablesInLevel = Sets.newHashSet(sstables);
-            Set<SSTableReader> remaining = Sets.difference(sstablesInLevel, cfs.getDataTracker().getCompacting());
+            Set<SSTableReader> remaining = Sets.difference(sstablesInLevel, cfs.getDataTracker().unsafeGetCompacting());
             double score = (double) SSTableReader.getTotalBytes(remaining) / (double)maxBytesForLevel(i);
-            logger.debug("Compaction score for level {} is {}", i, score);
+            logger.debug("Compaction score for {}/{} L{} is {}", cfs.keyspace.getName(), cfs.name, i, score);
 
             if (score > 1.001)
             {
@@ -317,13 +383,12 @@ public class LeveledManifest
                     return l0Compaction;
 
                 // L0 is fine, proceed with this level
-                Collection<SSTableReader> candidates = getCandidatesFor(i);
+                Collection<SSTableReader> candidates = getSizeBasedCandidatesFor(i);
                 if (!candidates.isEmpty())
                 {
                     int nextLevel = getNextLevel(candidates);
                     candidates = getOverlappingStarvedSSTables(nextLevel, candidates);
-                    if (logger.isDebugEnabled())
-                        logger.debug("Compaction candidates for L{} are {}", i, toString(candidates));
+                    logger.info("Compaction candidates for L{} are {}", i, toString(candidates));
                     return new CompactionCandidate(candidates, nextLevel, cfs.getCompactionStrategy().getMaxSSTableBytes());
                 }
                 else
@@ -333,10 +398,42 @@ public class LeveledManifest
             }
         }
 
+        // If levels are sized properly, verify if there are sstables with high tombstone ratio. SSTables with high
+        // tombstone ratio are pushed up to higher levels as an attempt to compact its cells with the cells they remove,
+        // therefore effectively deleting them. Tombstone push-up is an attempt to drop tombstones faster than normal C*
+        // leveled compaction would drop. This strategy has a possible downside of delaying compactions at lower levels
+        // if higher levels have sstables with high tombstone ratio due to accumulated tombstones prior to this patch
+        // being deployed, or during sudden bursts of deletes. In those scenarios, C* will spend most its compaction
+        // time performing level compactions and tombstone push-ups until the sstables are property sized and have
+        // acceptable tombstone ratios.
+        if (Boolean.getBoolean("fauna.tombstone-pushup")) {
+            for (int i = getLevelCount() - 1; i > 0; i--)
+            {
+                Collection<SSTableReader> candidates = getTombstoneRatioBasedCandidatesFor(i, gcBefore, tombstoneThreshold);
+                if (candidates != null)
+                {
+                    // before tombstone push up, check if L0 needs STCS compaction
+                    CompactionCandidate l0Compaction = getSTCSInL0CompactionCandidate();
+                    if (l0Compaction != null)
+                        return l0Compaction;
+
+                    int targetLevel = getNextLevel(candidates);
+                    // if possible, pick a starved sstable from higher levels to re-balance the tree
+                    candidates = getOverlappingStarvedSSTables(targetLevel, candidates);
+
+                    logger.info("Compaction candidates for tombstone push-up at L{} are {}", i, toString(candidates));
+
+                    return new CompactionCandidate(
+                                                   candidates, targetLevel, cfs.getCompactionStrategy().getMaxSSTableBytes());
+                }
+                logger.debug("No candidates for tombstone push-up at L{}", i);
+            }
+        }
+
         // Higher levels are happy, time for a standard, non-STCS L0 compaction
         if (getLevel(0).isEmpty())
             return null;
-        Collection<SSTableReader> candidates = getCandidatesFor(0);
+        Collection<SSTableReader> candidates = getSizeBasedCandidatesFor(0);
         if (candidates.isEmpty())
         {
             // Since we don't have any other compactions to do, see if there is a STCS compaction to perform in L0; if
@@ -354,7 +451,7 @@ public class LeveledManifest
             List<SSTableReader> mostInteresting = getSSTablesForSTCS(getLevel(0));
             if (!mostInteresting.isEmpty())
             {
-                logger.debug("L0 is too far behind, performing size-tiering there first");
+                logger.info("L0 is too far behind, performing size-tiering there first");
                 return new CompactionCandidate(mostInteresting, 0, Long.MAX_VALUE);
             }
         }
@@ -364,7 +461,7 @@ public class LeveledManifest
 
     private List<SSTableReader> getSSTablesForSTCS(Collection<SSTableReader> sstables)
     {
-        Iterable<SSTableReader> candidates = cfs.getDataTracker().getUncompactingSSTables(sstables);
+        Iterable<SSTableReader> candidates = cfs.getDataTracker().unsafeGetUncompactingSSTables(sstables);
         List<Pair<SSTableReader,Long>> pairs = SizeTieredCompactionStrategy.createSSTableAndLengthPairs(AbstractCompactionStrategy.filterSuspectSSTables(candidates));
         List<List<SSTableReader>> buckets = SizeTieredCompactionStrategy.getBuckets(pairs,
                                                                                     options.bucketHigh,
@@ -418,7 +515,7 @@ public class LeveledManifest
                     }
                     if (min == null || max == null || min.equals(max)) // single partition sstables - we cannot include a high level sstable.
                         return candidates;
-                    Set<SSTableReader> compacting = cfs.getDataTracker().getCompacting();
+                    Set<SSTableReader> compacting = cfs.getDataTracker().unsafeGetCompacting();
                     Range<RowPosition> boundaries = new Range<>(min, max);
                     for (SSTableReader sstable : getLevel(i))
                     {
@@ -540,12 +637,12 @@ public class LeveledManifest
      * If no compactions are possible (because of concurrent compactions or because some sstables are blacklisted
      * for prior failure), will return an empty list.  Never returns null.
      */
-    private Collection<SSTableReader> getCandidatesFor(int level)
+    private Collection<SSTableReader> getSizeBasedCandidatesFor(int level)
     {
         assert !getLevel(level).isEmpty();
         logger.debug("Choosing candidates for L{}", level);
 
-        final Set<SSTableReader> compacting = cfs.getDataTracker().getCompacting();
+        final Set<SSTableReader> compacting = cfs.getDataTracker().unsafeGetCompacting();
 
         if (level == 0)
         {
@@ -614,7 +711,9 @@ public class LeveledManifest
                     return Collections.emptyList();
                 candidates = Sets.union(candidates, l1overlapping);
             }
-            if (candidates.size() < 2)
+
+
+            if (candidates.size() < minL0Compacting)
                 return Collections.emptyList();
             else
                 return candidates;
@@ -633,6 +732,8 @@ public class LeveledManifest
             }
         }
 
+        double nextSize = (double)SSTableReader.getTotalBytes(getLevel(level + 1));
+
         // look for a non-suspect keyspace to compact with, starting with where we left off last time,
         // and wrapping back to the beginning of the generation if necessary
         for (int i = 0; i < getLevel(level).size(); i++)
@@ -641,6 +742,17 @@ public class LeveledManifest
             Set<SSTableReader> candidates = Sets.union(Collections.singleton(sstable), overlapping(sstable, getLevel(level + 1)));
             if (Iterables.any(candidates, suspectP))
                 continue;
+
+            // Allow this candidate if it won't compact too many files.
+            if (candidates.size() <= maxSplashFiles || Boolean.getBoolean(ALLOW_SPLASH_OPTION)) {
+                logger.info("Splash allowing this compaction for {} files for max of {}. ",
+                        candidates.size(), maxSplashFiles, toString(candidates));
+            } else {
+                logger.info("Splash would compact too many files {} for max of {}. ",
+                        candidates.size(), maxSplashFiles, toString(candidates));
+                continue;
+            }
+
             if (Sets.intersection(candidates, compacting).isEmpty())
                 return candidates;
         }
@@ -649,11 +761,52 @@ public class LeveledManifest
         return Collections.emptyList();
     }
 
+    private Collection<SSTableReader> getTombstoneRatioBasedCandidatesFor(int level, final int gcBefore, double tombstoneThreshold)
+    {
+        // [1, N), where N has sstables. We can't push tombstones any higher.
+        assert level > 0 && level < getLevelCount() : "Invalid tombstone push-up level";
+
+        Set<SSTableReader> compacting = cfs.getDataTracker().unsafeGetCompacting();
+        SortedSet<SSTableReader> sstables = getLevelSorted(level, new Comparator<SSTableReader>()
+        {
+            public int compare(SSTableReader a, SSTableReader b)
+            {
+                return -1 * Double.compare(
+                    a.getEstimatedDroppableTombstoneRatio(gcBefore),
+                    b.getEstimatedDroppableTombstoneRatio(gcBefore));
+            }
+        });
+
+        for (SSTableReader sstable : sstables)
+        {
+            if (sstable.getEstimatedDroppableTombstoneRatio(gcBefore) <= tombstoneThreshold)
+                break; // there can be no more sstables with high thombstone ratio after this entry
+
+            if (compacting.contains(sstable))
+                continue; // this sstable is already compacting
+
+            Set<SSTableReader> candidates = Sets.union(
+                Collections.singleton(sstable),
+                overlapping(sstable, getLevel(level + 1))
+            );
+
+            // skip single sstable compaction, already compacting sstables, or suspected sstables
+            if (candidates.size() < 2
+                || !Sets.intersection(candidates, compacting).isEmpty()
+                || Iterables.any(candidates, suspectP))
+                continue;
+
+            return candidates;
+        }
+
+        return null;
+    }
+
     private Set<SSTableReader> getCompacting(int level)
     {
         Set<SSTableReader> sstables = new HashSet<>();
         Set<SSTableReader> levelSSTables = new HashSet<>(getLevel(level));
-        for (SSTableReader sstable : cfs.getDataTracker().getCompacting())
+        for (SSTableReader sstable : cfs.getDataTracker().unsafeGetCompacting())
         {
             if (levelSSTables.contains(sstable))
                 sstables.add(sstable);

@@ -150,11 +150,8 @@ public class LazilyCompactedRow extends AbstractCompactedRow
 
     public void update(final MessageDigest digest)
     {
-        assert !closed;
-
         // no special-case for rows.size == 1, we're actually skipping some bytes here so just
         // blindly updating everything wouldn't be correct
-        DataOutputBuffer out = new DataOutputBuffer();
         OnDiskAtom.SerializerForWriting serializer = new OnDiskAtom.SerializerForWriting()
         {
             @Override
@@ -170,6 +167,14 @@ public class LazilyCompactedRow extends AbstractCompactedRow
             }
         };
 
+        update(digest, serializer);
+    }
+
+    public void update(MessageDigest digest, OnDiskAtom.SerializerForWriting serializer)
+    {
+        assert !closed;
+
+        DataOutputBuffer out = new DataOutputBuffer();
         // initialize indexBuilder for the benefit of its tombstoneTracker, used by our reducing iterator
         indexBuilder = new ColumnIndex.Builder(emptyColumnFamily, key.getKey(), out, serializer);
 

@@ -63,8 +63,11 @@ public class WriteResponseHandler extends AbstractWriteResponseHandler
         this(endpoint, writeType, null);
     }
 
+    @Override
     public void response(MessageIn m)
     {
+        super.response(m);
+
         if (responsesUpdater.decrementAndGet(this) == 0)
             signal();
     }

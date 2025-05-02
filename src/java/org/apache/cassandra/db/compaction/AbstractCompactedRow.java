@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.security.MessageDigest;
 
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.io.sstable.ColumnStats;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -57,6 +58,14 @@ public abstract class AbstractCompactedRow implements Closeable
      * update() may change internal state; it is NOT valid to call write() or update() a second time.
      */
     public abstract void update(MessageDigest digest);
+
+    /**
+     * update @param digest with the data bytes of the row according to the given @param serializer.
+     * May be called even if empty.
+     *
+     * update() may change internal state; it is NOT valid to call write() or update() a second time.
+     */
+    public abstract void update(MessageDigest digest, OnDiskAtom.SerializerForWriting serializer);
 
     /**
      * @return aggregate information about the columns in this row.  Some fields may

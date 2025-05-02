@@ -187,7 +187,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         String newdelay = System.getProperty("cassandra.ring_delay_ms");
         if (newdelay != null)
         {
-            logger.info("Overriding RING_DELAY to {}ms", newdelay);
+            logger.debug("Overriding RING_DELAY to {}ms", newdelay);
             return Integer.parseInt(newdelay);
         }
         else
@@ -259,8 +259,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     private static final AtomicInteger nextRepairCommand = new AtomicInteger();
 
     private final List<IEndpointLifecycleSubscriber> lifecycleSubscribers = new CopyOnWriteArrayList<>();
-
-    private static final BackgroundActivityMonitor bgMonitor = new BackgroundActivityMonitor();
 
     private final ObjectName jmxObjectName;
 
@@ -619,9 +617,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public synchronized void initServer(int delay) throws ConfigurationException
     {
-        logger.info("Cassandra version: {}", FBUtilities.getReleaseVersionString());
-        logger.info("Thrift API version: {}", cassandraConstants.VERSION);
-        logger.info("CQL supported versions: {} (default: {})", StringUtils.join(ClientState.getCQLSupportedVersion(), ","), ClientState.DEFAULT_CQL_VERSION);
+        logger.debug("Cassandra version: {}", FBUtilities.getReleaseVersionString());
+        logger.debug("Thrift API version: {}", cassandraConstants.VERSION);
+        logger.debug("CQL supported versions: {} (default: {})", StringUtils.join(ClientState.getCQLSupportedVersion(), ","), ClientState.DEFAULT_CQL_VERSION);
 
         if (initialized)
         {
@@ -646,7 +644,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         if (Boolean.parseBoolean(System.getProperty("cassandra.load_ring_state", "true")))
         {
-            logger.info("Loading persisted ring state");
+            logger.debug("Loading persisted ring state");
             Multimap<InetAddress, Token> loadedTokens = SystemKeyspace.loadTokens();
             Map<InetAddress, UUID> loadedHostIds = SystemKeyspace.loadHostIds();
             for (InetAddress ep : loadedTokens.keySet())
@@ -751,7 +749,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 states.add(Pair.create(ApplicationState.STATUS, valueFactory.hibernate(true)));
                 Gossiper.instance.addLocalApplicationStates(states);
             }
-            logger.info("Not joining ring as requested. Use JMX (StorageService->joinRing()) to initiate ring joining");
+            logger.debug("Not joining ring as requested. Use JMX (StorageService->joinRing()) to initiate ring joining");
         }
     }
 
@@ -804,7 +802,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             appStates.put(ApplicationState.HOST_ID, valueFactory.hostId(localHostId));
             appStates.put(ApplicationState.RPC_ADDRESS, valueFactory.rpcaddress(DatabaseDescriptor.getBroadcastRpcAddress()));
             appStates.put(ApplicationState.RELEASE_VERSION, valueFactory.releaseVersion());
-            logger.info("Starting up server gossip");
+            logger.debug("Starting up server gossip");
             Gossiper.instance.register(this);
             Gossiper.instance.start(SystemKeyspace.incrementAndGetGeneration(), appStates); // needed for node-ring gathering.
             // gossip snitch infos (local DC and rack)
@@ -841,7 +839,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                      SystemKeyspace.bootstrapComplete(),
                      DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()));
         if (DatabaseDescriptor.isAutoBootstrap() && !SystemKeyspace.bootstrapComplete() && DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()))
-            logger.info("This node will not auto bootstrap because it is configured to be a seed node.");
+            logger.debug("This node will not auto bootstrap because it is configured to be a seed node.");
         if (shouldBootstrap())
         {
             if (SystemKeyspace.bootstrapInProgress())
@@ -1134,10 +1132,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     {
         operationMode = m;
         String logMsg = msg == null ? m.toString() : String.format("%s: %s", m, msg);
-        if (log)
-            logger.info(logMsg);
-        else
-            logger.debug(logMsg);
+        logger.debug(logMsg);
     }
 
     private void bootstrap(Collection<Token> tokens)
@@ -1164,7 +1159,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             throw new IllegalStateException("Unable to contact any seeds!");
         setMode(Mode.JOINING, "Starting to bootstrap...", true);
         new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata).bootstrap(); // handles token update
-        logger.info("Bootstrap completed! for the tokens {}", tokens);
+        logger.debug("Bootstrap completed! for the tokens {}", tokens);
     }
 
     public boolean isBootstrapMode()
@@ -1182,17 +1177,17 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public void reportSeverity(double incr)
     {
-        bgMonitor.incrCompactionSeverity(incr);
+        // Disabled.
     }
 
     public void reportManualSeverity(double incr)
     {
-        bgMonitor.incrManualSeverity(incr);
+        // Disabled.
     }
 
     public double getSeverity(InetAddress endpoint)
     {
-        return bgMonitor.getSeverity(endpoint);
+        return 0.0; // Disabled.
     }
 
     /**
@@ -2125,7 +2120,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 // We still want to send the notification
                 sendReplicationNotification(notifyEndpoint);
             }
-        });
+        }, MoreExecutors.directExecutor());
     }
 
     // needs to be modified to accept either a keyspace or ARS.
@@ -3086,7 +3081,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         {
                             sendNotification("repair", String.format("Repair command #%d finished", cmd), new int[]{cmd, ActiveRepairService.Status.FINISHED.ordinal()});
                         }
-                    }, MoreExecutors.sameThreadExecutor());
+                    }, MoreExecutors.newDirectExecutorService());
                 }
                 else
                 {
@@ -3441,25 +3436,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             rangesToStream.put(keyspaceName, rangesMM);
         }
 
-        setMode(Mode.LEAVING, "replaying batch log and streaming data to other nodes", true);
+        setMode(Mode.LEAVING, "streaming data, hints, batchlog to other nodes", true);
 
-        // Start with BatchLog replay, which may create hints but no writes since this is no longer a valid endpoint.
-        Future<?> batchlogReplay = BatchlogManager.instance.startBatchlogReplay();
         Future<StreamState> streamSuccess = streamRanges(rangesToStream);
-
-        // Wait for batch log to complete before streaming hints.
-        logger.debug("waiting for batch log processing.");
-        try
-        {
-            batchlogReplay.get();
-        }
-        catch (ExecutionException | InterruptedException e)
-        {
-            throw new RuntimeException(e);
-        }
-
-        setMode(Mode.LEAVING, "streaming hints to other nodes", true);
-
+        Future<StreamState> batchlogSuccess = streamBatchlog();
         Future<StreamState> hintsSuccess = streamHints();
 
         // wait for the transfer runnables to signal the latch.
@@ -3467,6 +3447,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         try
         {
             streamSuccess.get();
+            batchlogSuccess.get();
             hintsSuccess.get();
         }
         catch (ExecutionException | InterruptedException e)
@@ -3480,9 +3461,21 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     private Future<StreamState> streamHints()
     {
-        // StreamPlan will not fail if there are zero files to transfer, so flush anyway (need to get any in-memory hints, as well)
-        ColumnFamilyStore hintsCF = Keyspace.open(Keyspace.SYSTEM_KS).getColumnFamilyStore(SystemKeyspace.HINTS_CF);
-        FBUtilities.waitOnFuture(hintsCF.forceFlush());
+        return streamSystemCF(SystemKeyspace.HINTS_CF);
+    }
+
+    private Future<StreamState> streamBatchlog()
+    {
+        return streamSystemCF(SystemKeyspace.BATCHLOG_CF);
+    }
+
+    private Future<StreamState> streamSystemCF(String cfName)
+    {
+        // StreamPlan will not fail if there are zero files to
+        // transfer, so flush anyway (need to get any in-memory cells,
+        // as well)
+        ColumnFamilyStore systemCF = Keyspace.open(Keyspace.SYSTEM_KS).getColumnFamilyStore(cfName);
+        FBUtilities.waitOnFuture(systemCF.forceFlush());
 
         // gather all live nodes in the cluster that aren't also leaving
         List<InetAddress> candidates = new ArrayList<>(StorageService.instance.getTokenMetadata().cloneAfterAllLeft().getAllEndpoints());
@@ -3496,26 +3489,23 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         if (candidates.isEmpty())
         {
-            logger.warn("Unable to stream hints since no live endpoints seen");
+            logger.warn("Unable to stream {} since no live endpoints seen", cfName);
             return Futures.immediateFuture(null);
         }
         else
         {
             // stream to the closest peer as chosen by the snitch
             DatabaseDescriptor.getEndpointSnitch().sortByProximity(FBUtilities.getBroadcastAddress(), candidates);
-            InetAddress hintsDestinationHost = candidates.get(0);
-            InetAddress preferred = SystemKeyspace.getPreferredIP(hintsDestinationHost);
+            InetAddress destinationHost = candidates.get(0);
+            InetAddress preferred = SystemKeyspace.getPreferredIP(destinationHost);
 
-            // stream all hints -- range list will be a singleton of "the entire ring"
+            // stream all cells -- range list will be a singleton of "the entire ring"
             Token token = StorageService.getPartitioner().getMinimumToken();
             List<Range<Token>> ranges = Collections.singletonList(new Range<>(token, token));
 
-            return new StreamPlan("Hints").transferRanges(hintsDestinationHost,
-                                                          preferred,
-                                                                      Keyspace.SYSTEM_KS,
-                                                                      ranges,
-                                                                      SystemKeyspace.HINTS_CF)
-                                                      .execute();
+            return new StreamPlan(cfName)
+              .transferRanges(destinationHost, preferred, Keyspace.SYSTEM_KS, ranges, cfName)
+              .execute();
         }
     }
 

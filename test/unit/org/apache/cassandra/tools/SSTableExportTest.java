@@ -30,6 +30,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 
+import com.github.cliftonlabs.json_simple.*;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.config.CFMetaData;
@@ -44,10 +45,6 @@ import org.apache.cassandra.io.sstable.SSTableWriter;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.UUIDGen;
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.json.simple.JSONValue;
-import org.json.simple.parser.ParseException;
 import org.junit.Test;
 
 public class SSTableExportTest extends SchemaLoader
@@ -95,7 +92,7 @@ public class SSTableExportTest extends SchemaLoader
     }
 
     @Test
-    public void testExportSimpleCf() throws IOException, ParseException
+    public void testExportSimpleCf() throws IOException, JsonException
     {
         File tempSS = tempSSTableFile("Keyspace1", "Standard1");
         ColumnFamily cfamily = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
@@ -125,27 +122,27 @@ public class SSTableExportTest extends SchemaLoader
         SSTableExport.export(reader, new PrintStream(tempJson.getPath()), new String[]{asHex("rowExclude")},
                 CFMetaData.sparseCFMetaData("Keyspace1", "Standard1", BytesType.instance));
 
-        JSONArray json = (JSONArray)JSONValue.parseWithException(new FileReader(tempJson));
+        JsonArray json = (JsonArray)Jsoner.deserialize(new FileReader(tempJson));
         assertEquals("unexpected number of rows", 2, json.size());
 
-        JSONObject rowA = (JSONObject)json.get(0);
+        JsonObject rowA = (JsonObject)json.get(0);
         assertEquals("unexpected number of keys", 2, rowA.keySet().size());
         assertEquals("unexpected row key",asHex("rowA"),rowA.get("key"));
 
-        JSONArray colsA = (JSONArray)rowA.get("cells");
-        JSONArray colA = (JSONArray)colsA.get(0);
+        JsonArray colsA = (JsonArray)rowA.get("cells");
+        JsonArray colA = (JsonArray)colsA.get(0);
         assert hexToBytes((String)colA.get(1)).equals(ByteBufferUtil.bytes("valA"));
 
-        JSONArray colExp = (JSONArray)colsA.get(1);
-        assert ((Long)colExp.get(4)) == 42;
-        assert ((Long)colExp.get(5)) == nowInSec;
+        JsonArray colExp = (JsonArray)colsA.get(1);
+        assert colExp.getLong(4) == 42;
+        assert colExp.getLong(5) == nowInSec;
 
-        JSONObject rowB = (JSONObject)json.get(1);
+        JsonObject rowB = (JsonObject)json.get(1);
         assertEquals("unexpected number of keys", 2, rowB.keySet().size());
         assertEquals("unexpected row key",asHex("rowB"),rowB.get("key"));
 
-        JSONArray colsB = (JSONArray)rowB.get("cells");
-        JSONArray colB = (JSONArray)colsB.get(0);
+        JsonArray colsB = (JsonArray)rowB.get("cells");
+        JsonArray colB = (JsonArray)colsB.get(0);
         assert colB.size() == 3;
 
     }
@@ -193,7 +190,7 @@ public class SSTableExportTest extends SchemaLoader
     }
 
     @Test
-    public void testExportCounterCf() throws IOException, ParseException
+    public void testExportCounterCf() throws IOException, JsonException
     {
         File tempSS = tempSSTableFile("Keyspace1", "Counter1");
         ColumnFamily cfamily = ArrayBackedSortedColumns.factory.create("Keyspace1", "Counter1");
@@ -210,22 +207,22 @@ public class SSTableExportTest extends SchemaLoader
         File tempJson = File.createTempFile("Counter1", ".json");
         SSTableExport.export(reader, new PrintStream(tempJson.getPath()), new String[0],
                 CFMetaData.sparseCFMetaData("Keyspace1", "Counter1", BytesType.instance));
-        JSONArray json = (JSONArray)JSONValue.parseWithException(new FileReader(tempJson));
+        JsonArray json = (JsonArray)Jsoner.deserialize(new FileReader(tempJson));
         assertEquals("unexpected number of rows", 1, json.size());
 
-        JSONObject row = (JSONObject)json.get(0);
+        JsonObject row = (JsonObject)json.get(0);
         assertEquals("unexpected number of keys", 2, row.keySet().size());
         assertEquals("unexpected row key",asHex("rowA"),row.get("key"));
 
-        JSONArray cols = (JSONArray)row.get("cells");
-        JSONArray colA = (JSONArray)cols.get(0);
+        JsonArray cols = (JsonArray)row.get("cells");
+        JsonArray colA = (JsonArray)cols.get(0);
         assert hexToBytes((String)colA.get(0)).equals(ByteBufferUtil.bytes("colA"));
         assert ((String) colA.get(3)).equals("c");
-        assert (Long) colA.get(4) == Long.MIN_VALUE;
+        assert colA.getLong(4) == Long.MIN_VALUE;
     }
 
     @Test
-    public void testEscapingDoubleQuotes() throws IOException, ParseException
+    public void testEscapingDoubleQuotes() throws IOException, JsonException
     {
         File tempSS = tempSSTableFile("Keyspace1", "ValuesWithQuotes");
         ColumnFamily cfamily = ArrayBackedSortedColumns.factory.create("Keyspace1", "ValuesWithQuotes");
@@ -243,21 +240,21 @@ public class SSTableExportTest extends SchemaLoader
         SSTableExport.export(reader, new PrintStream(tempJson.getPath()), new String[0],
                 CFMetaData.sparseCFMetaData("Keyspace1", "ValuesWithQuotes", BytesType.instance));
 
-        JSONArray json = (JSONArray)JSONValue.parseWithException(new FileReader(tempJson));
+        JsonArray json = (JsonArray)Jsoner.deserialize(new FileReader(tempJson));
         assertEquals("unexpected number of rows", 1, json.size());
 
-        JSONObject row = (JSONObject)json.get(0);
+        JsonObject row = (JsonObject)json.get(0);
         assertEquals("unexpected number of keys", 2, row.keySet().size());
         assertEquals("unexpected row key",asHex("rowA"),row.get("key"));
 
-        JSONArray cols = (JSONArray)row.get("cells");
-        JSONArray colA = (JSONArray)cols.get(0);
+        JsonArray cols = (JsonArray)row.get("cells");
+        JsonArray colA = (JsonArray)cols.get(0);
         assert hexToBytes((String)colA.get(0)).equals(ByteBufferUtil.bytes("data"));
         assert colA.get(1).equals("{\"foo\":\"bar\"}");
     }
 
     @Test
-    public void testExportColumnsWithMetadata() throws IOException, ParseException
+    public void testExportColumnsWithMetadata() throws IOException, JsonException
     {
         File tempSS = tempSSTableFile("Keyspace1", "Standard1");
         ColumnFamily cfamily = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
@@ -275,10 +272,10 @@ public class SSTableExportTest extends SchemaLoader
         SSTableExport.export(reader, new PrintStream(tempJson.getPath()), new String[0],
                 CFMetaData.sparseCFMetaData("Keyspace1", "Counter1", BytesType.instance));
 
-        JSONArray json = (JSONArray)JSONValue.parseWithException(new FileReader(tempJson));
+        JsonArray json = (JsonArray)Jsoner.deserialize(new FileReader(tempJson));
         assertEquals("unexpected number of rows", 1, json.size());
 
-        JSONObject row = (JSONObject)json.get(0);
+        JsonObject row = (JsonObject)json.get(0);
         assertEquals("unexpected number of keys", 3, row.keySet().size());
         assertEquals("unexpected row key",asHex("rowA"),row.get("key"));
 
@@ -288,28 +285,28 @@ public class SSTableExportTest extends SchemaLoader
         assertEquals("key did not match", ByteBufferUtil.bytes("rowA"), hexToBytes(rowKey));
 
         // check that there is metadata and that it contains deletionInfo
-        JSONObject meta = (JSONObject) row.get("metadata");
+        JsonObject meta = (JsonObject) row.get("metadata");
         assertNotNull("expecing metadata to be present", meta);
 
         assertEquals("unexpected number of metadata entries", 1, meta.keySet().size());
 
-        JSONObject serializedDeletionInfo = (JSONObject) meta.get("deletionInfo");
+        JsonObject serializedDeletionInfo = (JsonObject) meta.get("deletionInfo");
         assertNotNull("expecing deletionInfo to be present", serializedDeletionInfo);
 
         assertEquals("unexpected serialization format for topLevelDeletion",
-                     JSONValue.parse("{\"markedForDeleteAt\":0,\"localDeletionTime\":0}"),
+                     Jsoner.deserialize("{\"markedForDeleteAt\":0,\"localDeletionTime\":0}"),
                      serializedDeletionInfo);
 
         // check the colums are what we put in
-        JSONArray cols = (JSONArray) row.get("cells");
+        JsonArray cols = (JsonArray) row.get("cells");
         assertNotNull("expecing columns to be present", cols);
         assertEquals("expecting two columns", 2, cols.size());
 
-        JSONArray col1 = (JSONArray) cols.get(0);
+        JsonArray col1 = (JsonArray) cols.get(0);
         assertEquals("column name did not match", ByteBufferUtil.bytes("colName"), hexToBytes((String) col1.get(0)));
         assertEquals("column value did not match", ByteBufferUtil.bytes("val"), hexToBytes((String) col1.get(1)));
 
-        JSONArray col2 = (JSONArray) cols.get(1);
+        JsonArray col2 = (JsonArray) cols.get(1);
         assertEquals("column name did not match", ByteBufferUtil.bytes("colName1"), hexToBytes((String) col2.get(0)));
         assertEquals("column value did not match", ByteBufferUtil.bytes("val1"), hexToBytes((String) col2.get(1)));
     }
@@ -318,7 +315,7 @@ public class SSTableExportTest extends SchemaLoader
      * Tests CASSANDRA-6892 (key aliases being used improperly for validation)
      */
     @Test
-    public void testColumnNameEqualToDefaultKeyAlias() throws IOException, ParseException
+    public void testColumnNameEqualToDefaultKeyAlias() throws IOException, JsonException
     {
         File tempSS = tempSSTableFile("Keyspace1", "UUIDKeys");
         ColumnFamily cfamily = ArrayBackedSortedColumns.factory.create("Keyspace1", "UUIDKeys");
@@ -334,21 +331,21 @@ public class SSTableExportTest extends SchemaLoader
         SSTableExport.export(reader, new PrintStream(tempJson.getPath()), new String[0],
                 CFMetaData.sparseCFMetaData("Keyspace1", "UUIDKeys", BytesType.instance));
 
-        JSONArray json = (JSONArray)JSONValue.parseWithException(new FileReader(tempJson));
+        JsonArray json = (JsonArray)Jsoner.deserialize(new FileReader(tempJson));
         assertEquals(1, json.size());
 
-        JSONObject row = (JSONObject)json.get(0);
-        JSONArray cols = (JSONArray) row.get("cells");
+        JsonObject row = (JsonObject)json.get(0);
+        JsonArray cols = (JsonArray) row.get("cells");
         assertEquals(1, cols.size());
 
         // check column name and value
-        JSONArray col = (JSONArray) cols.get(0);
+        JsonArray col = (JsonArray) cols.get(0);
         assertEquals(CFMetaData.DEFAULT_KEY_ALIAS, ByteBufferUtil.string(hexToBytes((String) col.get(0))));
         assertEquals("not a uuid", ByteBufferUtil.string(hexToBytes((String) col.get(1))));
     }
 
     @Test
-    public void testAsciiKeyValidator() throws IOException, ParseException
+    public void testAsciiKeyValidator() throws IOException, JsonException
     {
         File tempSS = tempSSTableFile("Keyspace1", "AsciiKeys");
         ColumnFamily cfamily = ArrayBackedSortedColumns.factory.create("Keyspace1", "AsciiKeys");
@@ -366,10 +363,10 @@ public class SSTableExportTest extends SchemaLoader
                              new String[0],
                              CFMetaData.sparseCFMetaData("Keyspace1", "AsciiKeys", BytesType.instance));
 
-        JSONArray json = (JSONArray)JSONValue.parseWithException(new FileReader(tempJson));
+        JsonArray json = (JsonArray)Jsoner.deserialize(new FileReader(tempJson));
         assertEquals(1, json.size());
 
-        JSONObject row = (JSONObject)json.get(0);
+        JsonObject row = (JsonObject)json.get(0);
         // check row key
         assertEquals("key", row.get("key"));
     }

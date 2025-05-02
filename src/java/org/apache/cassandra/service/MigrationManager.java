@@ -227,7 +227,7 @@ public class MigrationManager
         if (Schema.instance.getKSMetaData(ksm.name) != null)
             throw new AlreadyExistsException(ksm.name);
 
-        logger.info(String.format("Create new Keyspace: %s", ksm));
+        logger.debug(String.format("Create new Keyspace: %s", ksm));
         announce(ksm.toSchema(timestamp), announceLocally);
     }
 
@@ -246,7 +246,7 @@ public class MigrationManager
         else if (ksm.cfMetaData().containsKey(cfm.cfName))
             throw new AlreadyExistsException(cfm.ksName, cfm.cfName);
 
-        logger.info(String.format("Create new ColumnFamily: %s", cfm));
+        logger.debug(String.format("Create new ColumnFamily: %s", cfm));
         announce(addSerializedKeyspace(cfm.toSchema(FBUtilities.timestampMicros()), cfm.ksName), announceLocally);
     }
 

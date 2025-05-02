@@ -48,7 +48,7 @@ public class StatusLogger
         MBeanServer server = ManagementFactory.getPlatformMBeanServer();
 
         // everything from o.a.c.concurrent
-        logger.info(String.format("%-25s%10s%10s%15s%10s%18s", "Pool Name", "Active", "Pending", "Completed", "Blocked", "All Time Blocked"));
+        logger.debug(String.format("%-25s%10s%10s%15s%10s%18s", "Pool Name", "Active", "Pending", "Completed", "Blocked", "All Time Blocked"));
         Set<ObjectName> request, internal;
         try
         {
@@ -63,7 +63,7 @@ public class StatusLogger
         {
             String poolName = objectName.getKeyProperty("type");
             JMXEnabledThreadPoolExecutorMBean threadPoolProxy = JMX.newMBeanProxy(server, objectName, JMXEnabledThreadPoolExecutorMBean.class);
-            logger.info(String.format("%-25s%10s%10s%15s%10s%18s",
+            logger.debug(String.format("%-25s%10s%10s%15s%10s%18s",
                                       poolName,
                                       threadPoolProxy.getActiveCount(),
                                       threadPoolProxy.getPendingTasks(),
@@ -72,7 +72,7 @@ public class StatusLogger
                                       threadPoolProxy.getTotalBlockedTasks()));
         }
         // one offs
-        logger.info(String.format("%-25s%10s%10s",
+        logger.debug(String.format("%-25s%10s%10s",
                                   "CompactionManager", CompactionManager.instance.getActiveCompactions(), CompactionManager.instance.getPendingTasks()));
         int pendingCommands = 0;
         for (int n : MessagingService.instance().getCommandPendingTasks().values())
@@ -84,7 +84,7 @@ public class StatusLogger
         {
             pendingResponses += n;
         }
-        logger.info(String.format("%-25s%10s%10s",
+        logger.debug(String.format("%-25s%10s%10s",
                                   "MessagingService", "n/a", pendingCommands + "/" + pendingResponses));
 
         // Global key/row cache information
@@ -94,25 +94,25 @@ public class StatusLogger
         int keyCacheKeysToSave = DatabaseDescriptor.getKeyCacheKeysToSave();
         int rowCacheKeysToSave = DatabaseDescriptor.getRowCacheKeysToSave();
 
-        logger.info(String.format("%-25s%10s%25s%25s",
+        logger.debug(String.format("%-25s%10s%25s%25s",
                                   "Cache Type", "Size", "Capacity", "KeysToSave"));
-        logger.info(String.format("%-25s%10s%25s%25s",
+        logger.debug(String.format("%-25s%10s%25s%25s",
                                   "KeyCache",
                                   keyCache.weightedSize(),
                                   keyCache.getCapacity(),
                                   keyCacheKeysToSave == Integer.MAX_VALUE ? "all" : keyCacheKeysToSave));
 
-        logger.info(String.format("%-25s%10s%25s%25s",
+        logger.debug(String.format("%-25s%10s%25s%25s",
                                   "RowCache",
                                   rowCache.weightedSize(),
                                   rowCache.getCapacity(),
                                   rowCacheKeysToSave == Integer.MAX_VALUE ? "all" : rowCacheKeysToSave));
 
         // per-CF stats
-        logger.info(String.format("%-25s%20s", "ColumnFamily", "Memtable ops,data"));
+        logger.debug(String.format("%-25s%20s", "ColumnFamily", "Memtable ops,data"));
         for (ColumnFamilyStore cfs : ColumnFamilyStore.all())
         {
-            logger.info(String.format("%-25s%20s",
+            logger.debug(String.format("%-25s%20s",
                                       cfs.keyspace.getName() + "." + cfs.name,
                                       cfs.getMemtableColumnsCount() + "," + cfs.getMemtableDataSize()));
         }

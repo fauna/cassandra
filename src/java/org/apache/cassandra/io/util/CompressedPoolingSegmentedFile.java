@@ -92,7 +92,7 @@ public class CompressedPoolingSegmentedFile extends PoolingSegmentedFile impleme
 
     protected RandomAccessReader createPooledReader()
     {
-        return CompressedRandomAccessReader.open(path, metadata, this);
+      return createReader();
     }
 
     public CompressionMetadata getMetadata()

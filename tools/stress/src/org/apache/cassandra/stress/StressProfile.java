@@ -51,6 +51,7 @@ import org.apache.cassandra.stress.util.Timer;
 import org.apache.cassandra.thrift.Compression;
 import org.apache.cassandra.thrift.ThriftConversion;
 import org.apache.thrift.TException;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 import org.yaml.snakeyaml.error.YAMLException;
@@ -533,7 +534,7 @@ public class StressProfile implements Serializable
     {
         try
         {
-            Constructor constructor = new Constructor(StressYaml.class);
+            Constructor constructor = new Constructor(StressYaml.class, new LoaderOptions());
 
             Yaml yaml = new Yaml(constructor);
 

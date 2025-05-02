@@ -50,7 +50,7 @@ public class CompactionController implements AutoCloseable
     // is no overlap.
     private DataTracker.SSTableIntervalTree overlappingTree;
     private Refs<SSTableReader> overlappingSSTables;
-    private final Iterable<SSTableReader> compacting;
+    public final Iterable<SSTableReader> compacting;
 
     public final int gcBefore;
 
@@ -166,7 +166,7 @@ public class CompactionController implements AutoCloseable
             }
             else
             {
-               logger.debug("Dropping expired SSTable {} (maxLocalDeletionTime={}, gcBefore={})",
+               logger.info("Dropping expired SSTable {} (maxLocalDeletionTime={}, gcBefore={})",
                         candidate, candidate.getSSTableMetadata().maxLocalDeletionTime, gcBefore);
             }
         }
@@ -181,6 +181,27 @@ public class CompactionController implements AutoCloseable
     public String getColumnFamily()
     {
         return cfs.name;
+    }
+
+    /** @return the number of SSTables not participating in this
+     * compaction which contain the given partition.
+     */
+    public long overlappingKey(DecoratedKey key)
+    {
+        long count = 0;
+        List<SSTableReader> filteredSSTables = overlappingTree.search(key);
+
+        for (SSTableReader sstable : filteredSSTables)
+        {
+            // if we don't have bloom filter(bf_fp_chance=1.0 or filter file is missing),
+            // we check index file instead.
+            if (sstable.getBloomFilter() instanceof AlwaysPresentFilter && sstable.getPosition(key, SSTableReader.Operator.EQ, false) != null)
+                count += 1;
+            else if (sstable.getBloomFilter().isPresent(key.getKey()))
+                count += 1;
+        }
+
+        return count;
     }
 
     /**

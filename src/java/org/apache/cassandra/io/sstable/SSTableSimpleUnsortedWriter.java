@@ -256,7 +256,7 @@ public class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
             {
                 JVMStabilityInspector.inspectThrowable(e);
                 if (writer != null)
-                    writer.abort();
+                    writer.abort(String.format("SSTableSimpleUnsortedWriter (%s)", e.getMessage()));
                 exception = e;
             }
         }

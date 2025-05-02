@@ -18,6 +18,8 @@
  */
 package org.apache.cassandra.utils;
 
+import java.util.function.Supplier;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +30,7 @@ public interface OutputHandler
 
     // called when a less important info need to be displayed
     public void debug(String msg);
+    public void debug(Supplier<String> msg);
 
     // called when the user needs to be warn
     public void warn(String msg);
@@ -45,6 +48,13 @@ public interface OutputHandler
         public void debug(String msg)
         {
             logger.debug(msg);
+        }
+
+        public void debug(Supplier<String> msg)
+        {
+            if (logger.isDebugEnabled()) {
+                debug(msg.get());
+            }
         }
 
         public void warn(String msg)
@@ -76,8 +86,16 @@ public interface OutputHandler
 
         public void debug(String msg)
         {
-            if (debug)
+            if (debug) {
                 System.out.println(msg);
+            }
+        }
+
+        public void debug(Supplier<String> msg)
+        {
+            if (debug) {
+                debug(msg.get());
+            }
         }
 
         public void warn(String msg)

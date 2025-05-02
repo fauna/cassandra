@@ -370,7 +370,7 @@ public class DefsTables
         KSMetaData ksm = Schema.instance.getKSMetaData(cfm.ksName);
         ksm = KSMetaData.cloneWith(ksm, Iterables.concat(ksm.cfMetaData().values(), Collections.singleton(cfm)));
 
-        logger.info("Loading {}", cfm);
+        logger.debug("Loading {}", cfm);
 
         Schema.instance.load(cfm);
 
@@ -392,7 +392,7 @@ public class DefsTables
         KSMetaData ksm = Schema.instance.getKSMetaData(ut.keyspace);
         assert ksm != null;
 
-        logger.info("Loading {}", ut);
+        logger.debug("Loading {}", ut);
 
         ksm.userTypes.addType(ut);
 

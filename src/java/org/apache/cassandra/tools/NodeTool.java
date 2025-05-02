@@ -1932,7 +1932,7 @@ public class NodeTool
             {
                 try
                 {
-                    RepairParallelism parallelismDegree = RepairParallelism.SEQUENTIAL;
+                    RepairParallelism parallelismDegree = RepairParallelism.PARALLEL;
                     if (parallel)
                         parallelismDegree = RepairParallelism.PARALLEL;
                     else if (dcParallel)

@@ -156,7 +156,7 @@ public final class CLibrary
             {
                 logger.warn("Unable to lock JVM memory (ENOMEM)."
                         + " This can result in part of the JVM being swapped out, especially with mmapped I/O enabled."
-                        + " Increase RLIMIT_MEMLOCK or run Cassandra as root.");
+                        + " Increase RLIMIT_MEMLOCK or run as root.");
             }
             else if (!System.getProperty("os.name").toLowerCase().contains("mac"))
             {

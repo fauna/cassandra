@@ -195,11 +195,7 @@ public final class WrappingCompactionStrategy extends AbstractCompactionStrategy
 
     public synchronized int getUnleveledSSTables()
     {
-        if (this.repaired instanceof LeveledCompactionStrategy && this.unrepaired instanceof LeveledCompactionStrategy)
-        {
-            return ((LeveledCompactionStrategy)repaired).getLevelSize(0) + ((LeveledCompactionStrategy)unrepaired).getLevelSize(0);
-        }
-        return 0;
+        return this.repaired.getUnleveledSSTables() + this.unrepaired.getUnleveledSSTables();
     }
 
     public synchronized int[] getSSTableCountPerLevel()

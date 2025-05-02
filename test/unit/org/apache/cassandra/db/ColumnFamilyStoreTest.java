@@ -41,6 +41,7 @@ import org.apache.cassandra.Util;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
+import org.apache.cassandra.db.compaction.*;
 import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.index.PerRowSecondaryIndexTest;
@@ -1833,6 +1834,147 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         sstables = dir.sstableLister().list();
         assert sstables.size() == 1;
         assert sstables.containsKey(sstable1.descriptor);
+    }
+
+    /**
+     * C* 2.1.16 traditionally removes compaction ancestors at start-up. However, a race condition between remvoing
+     * an ancestor while creating new sstables could trick the system into mis-considering a necessary sstable as a
+     * compaction left over and remove it, therefore causing data loss. The observed sequence of events are:
+     *
+     * - SSTable (b) has (a) as an ancestor;
+     * - SSTable (a) is not deleted due to a held reference while compacting into (b);
+     * - SSTable (b) starts compacting, producing (c) and (d);
+     * - SSTables (c) and (d) captures (b) and (a) as ancestors
+     *   (see MetadataCollector(Collection<SSTableReader>, CellNameType, int));
+     * - SSTable (a) gets deleted;
+     * - SSTable (c) gets finalized;
+     * - System restarts/crash before finalizing SSTable (d);
+     *
+     * During compaction left overs cleanup, while checking the finalized SSTable (c), C* considers all its ancestors
+     * as compaction left overs and removes (b). The removal of (b) causes a data loss since (d) was not finalized by
+     * the unfinished compaction and will be removed at start-up.
+     */
+    @Test
+    public void testRemoveUnfinishedCompactionLeftoversDontDropAncestors() throws Throwable
+    {
+        String ksName = "Keyspace1";
+        String cfName = "Standard5"; // should be empty
+        int generationA = 0; // fake SSTable's (a) generation marker
+
+        Keyspace ks = Keyspace.open(ksName);
+        ColumnFamilyStore cfs = ks.getColumnFamilyStore(cfName);
+
+        // SSTable (b)
+        SSTableSimpleWriter writerA = new SSTableSimpleWriter(cfs.directories.getDirectoryForNewSSTables(),
+                                                              cfs.metadata, StorageService.getPartitioner())
+        {
+            protected SSTableWriter getWriter()
+            {
+                MetadataCollector collector = new MetadataCollector(metadata.comparator);
+                collector.addAncestor(generationA); // fake capturing SSTable (a) as an ancestor
+
+                return new SSTableWriter(makeFilename(directory, metadata.ksName, metadata.cfName),
+                                         0,
+                                         ActiveRepairService.UNREPAIRED_SSTABLE,
+                                         metadata,
+                                         StorageService.getPartitioner(),
+                                         collector);
+            }
+        };
+        writerA.newRow(bytes("key1"));
+        writerA.addColumn(bytes("col"), bytes("val"), 1);
+        writerA.newRow(bytes("key2"));
+        writerA.addColumn(bytes("col"), bytes("val"), 2);
+        writerA.close();
+
+        cfs.loadNewSSTables();
+        Collection<SSTableReader> originals = cfs.getSSTables();
+        assertEquals(1, originals.size());
+
+        SSTableReader readerB = originals.iterator().next();
+        int generationB = readerB.descriptor.generation;
+
+        // Compaction products (c) and (d) have (b) and (a) as ancestors
+        MetadataCollector collectorC = new MetadataCollector(originals, cfs.metadata.comparator, 1);
+        collectorC.addAncestor(generationA);
+        collectorC.addAncestor(generationB);
+
+        SSTableWriter writerC = new  SSTableWriter(cfs.getTempSSTablePath(cfs.directories.getDirectoryForNewSSTables()),
+                                                   0,
+                                                   ActiveRepairService.UNREPAIRED_SSTABLE,
+                                                   cfs.metadata,
+                                                   StorageService.getPartitioner(),
+                                                   collectorC);
+
+        MetadataCollector collectorD = new MetadataCollector(cfs.metadata.comparator);
+        collectorD.addAncestor(generationA);
+        collectorD.addAncestor(generationB);
+
+        SSTableWriter writerD = new  SSTableWriter(cfs.getTempSSTablePath(cfs.directories.getDirectoryForNewSSTables()),
+                                                   0,
+                                                   ActiveRepairService.UNREPAIRED_SSTABLE,
+                                                   cfs.metadata,
+                                                   StorageService.getPartitioner(),
+                                                   collectorD);
+
+
+        // Start comapcting (b) into (c) and (d)
+        UUID compactionTaskID = SystemKeyspace.startCompaction(cfs, originals);
+        SSTableRewriter rewriter = new SSTableRewriter(cfs, Sets.newHashSet(originals), Integer.MAX_VALUE, false);
+
+        try (AbstractCompactionStrategy.ScannerList scanners = cfs.getCompactionStrategy().getScanners(originals))
+        {
+                assertEquals(1, scanners.scanners.size());
+                ISSTableScanner scanner = scanners.scanners.get(0);
+                CompactionController controller = new CompactionController(cfs, Sets.newHashSet(originals), cfs.gcBefore(0));
+
+                rewriter.switchWriter(writerC);
+                while(scanner.hasNext())
+                {
+                        AbstractCompactedRow row = new LazilyCompactedRow(controller, Arrays.asList(scanner.next()));
+                        rewriter.append(row);
+                        if (rewriter.currentWriter() != writerD)
+                                rewriter.switchWriter(writerD);
+                }
+        }
+
+        SSTableReader readerC = writerC.closeAndOpenReader(); // (c) becomes final but (d) don't
+
+        // Should have 3 sstables now: (b), (c), and (d)
+        Map<Descriptor, Set<Component>> sstables = cfs.directories.sstableLister().list();
+        assertTrue(sstables.containsKey(readerB.descriptor));
+        assertTrue(sstables.containsKey(readerC.descriptor));
+        assertTrue(sstables.containsKey(writerD.descriptor));
+
+        // Only SSTable (d) is temporary
+        sstables = cfs.directories.sstableLister().skipTemporary(true).list();
+        assertTrue(sstables.containsKey(readerB.descriptor));
+        assertTrue(sstables.containsKey(readerC.descriptor));
+        assertFalse(sstables.containsKey(writerD.descriptor));
+
+        // SSTable (b) is be part of a pending compaction
+        Map<Integer, UUID> unfinishedCompaction = new HashMap<Integer, UUID>();
+        Pair<String, String> ksCf = Pair.create(ksName, cfName);
+        Map<Integer, UUID> pending = SystemKeyspace.getUnfinishedCompactions().get(ksCf);
+
+        for (Map.Entry<Integer, UUID> entry : pending.entrySet())
+        {
+                if (entry.getValue().equals(compactionTaskID))
+                {
+                        assertEquals(readerB.descriptor.generation, (int)entry.getKey());
+                        unfinishedCompaction.put(entry.getKey(), entry.getValue());
+                }
+        }
+        assertEquals(1, unfinishedCompaction.size());
+
+        // Removing unfinished compaction must preserves (b) and (c)
+        ColumnFamilyStore.removeUnfinishedCompactionLeftovers(cfs.metadata, unfinishedCompaction);
+        ColumnFamilyStore.scrubDataDirectories(cfs.metadata);
+
+        sstables = cfs.directories.sstableLister().list();
+        assertTrue(sstables.containsKey(readerB.descriptor));
+        assertTrue(sstables.containsKey(readerC.descriptor));
+        assertFalse(sstables.containsKey(writerD.descriptor));
     }
 
     @Test

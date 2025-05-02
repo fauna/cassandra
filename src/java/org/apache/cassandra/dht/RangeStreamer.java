@@ -141,23 +141,35 @@ public class RangeStreamer
 
     public void addRanges(String keyspaceName, Collection<Range<Token>> ranges)
     {
-        Multimap<Range<Token>, InetAddress> rangesForKeyspace = useStrictSourcesForRanges(keyspaceName)
-                ? getAllRangesWithStrictSourcesFor(keyspaceName, ranges) : getAllRangesWithSourcesFor(keyspaceName, ranges);
+        for ( ; ; ) {
+            try {
+                Multimap<Range<Token>, InetAddress> rangesForKeyspace = useStrictSourcesForRanges(keyspaceName)
+                        ? getAllRangesWithStrictSourcesFor(keyspaceName, ranges) : getAllRangesWithSourcesFor(keyspaceName, ranges);
 
-        if (logger.isDebugEnabled())
-        {
-            for (Map.Entry<Range<Token>, InetAddress> entry : rangesForKeyspace.entries())
-                logger.debug(String.format("%s: range %s exists on %s", description, entry.getKey(), entry.getValue()));
-        }
+                if (logger.isDebugEnabled())
+                {
+                    for (Map.Entry<Range<Token>, InetAddress> entry : rangesForKeyspace.entries())
+                        logger.debug(String.format("%s: range %s exists on %s", description, entry.getKey(), entry.getValue()));
+                }
 
-        for (Map.Entry<InetAddress, Collection<Range<Token>>> entry : getRangeFetchMap(rangesForKeyspace, sourceFilters, keyspaceName).asMap().entrySet())
-        {
-            if (logger.isDebugEnabled())
-            {
-                for (Range<Token> r : entry.getValue())
-                    logger.debug(String.format("%s: range %s from source %s for keyspace %s", description, r, entry.getKey(), keyspaceName));
+                for (Map.Entry<InetAddress, Collection<Range<Token>>> entry : getRangeFetchMap(rangesForKeyspace, sourceFilters, keyspaceName).asMap().entrySet())
+                {
+                    if (logger.isDebugEnabled())
+                    {
+                        for (Range<Token> r : entry.getValue())
+                            logger.debug(String.format("%s: range %s from source %s for keyspace %s", description, r, entry.getKey(), keyspaceName));
+                    }
+                    toFetch.put(keyspaceName, entry);
+                }
+
+                break;
+            } catch (RuntimeException re) {
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException ie) {
+                    break;
+                }
             }
-            toFetch.put(keyspaceName, entry);
         }
     }
 
